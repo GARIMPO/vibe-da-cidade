@@ -7,10 +7,21 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Dependencies
 node_modules
-dist
-dist-ssr
-*.local
+/.pnp
+.pnp.js
+
+# Build directories
+/dist
+/build
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +33,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# OS generated files
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
