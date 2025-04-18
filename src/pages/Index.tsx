@@ -10,10 +10,12 @@ import { supabase } from '@/lib/supabase';
 
 const Index: React.FC = () => {
   const [coverImage, setCoverImage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Buscar a URL da imagem de capa das configurações do site
   useEffect(() => {
     const fetchCoverImage = async () => {
+      setIsLoading(true);
       try {
         const { data, error } = await supabase
           .from('site_settings')
@@ -23,14 +25,11 @@ const Index: React.FC = () => {
           
         if (data && data.value) {
           setCoverImage(data.value);
-        } else {
-          // Usar imagem padrão se não houver configuração
-          setCoverImage('https://images.unsplash.com/photo-1519214605650-76a613ee3245?q=80&w=2069&auto=format&fit=crop');
         }
       } catch (error) {
         console.error('Erro ao buscar imagem de capa:', error);
-        // Usar imagem padrão em caso de erro
-        setCoverImage('https://images.unsplash.com/photo-1519214605650-76a613ee3245?q=80&w=2069&auto=format&fit=crop');
+      } finally {
+        setIsLoading(false);
       }
     };
     
@@ -43,16 +42,18 @@ const Index: React.FC = () => {
       <main className="flex-grow">
         <div className="relative h-[80vh] flex items-center justify-center">
           {/* Imagem de fundo com overlay */}
-          <div 
-            className="absolute inset-0 bg-cover bg-center bg-no-repeat z-0" 
-            style={{ 
-              backgroundImage: `url(${coverImage || 'https://images.unsplash.com/photo-1519214605650-76a613ee3245?q=80&w=2069&auto=format&fit=crop'})`,
-              backgroundPosition: 'center 30%'
-            }}
-          >
-            {/* Overlay gradiente para garantir legibilidade do texto */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-black z-0"></div>
-          </div>
+          {coverImage && (
+            <div 
+              className="absolute inset-0 bg-cover bg-center bg-no-repeat z-0" 
+              style={{ 
+                backgroundImage: `url(${coverImage})`,
+                backgroundPosition: 'center 30%'
+              }}
+            >
+              {/* Overlay gradiente para garantir legibilidade do texto */}
+              <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-black z-0"></div>
+            </div>
+          )}
           
           {/* Conteúdo */}
           <div className="relative z-10 flex flex-col items-center justify-center space-y-6 px-4 text-center">

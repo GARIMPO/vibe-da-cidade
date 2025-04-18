@@ -89,15 +89,16 @@ export async function getBars() {
   try {
     const { data, error } = await supabase
       .from('bars')
-      .select('*');
+      .select('*')
+      .order('id', { ascending: true });
     
     if (error) {
       console.error('Erro ao buscar bares:', error);
       return [];
     }
     
-    // Randomizar a ordem dos bares
-    return data ? shuffleArray(data) : [];
+    // Retornar os dados ordenados, sem embaralhar
+    return data || [];
   } catch (err) {
     console.error('Erro na requisição:', err);
     return [];

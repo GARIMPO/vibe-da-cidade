@@ -375,6 +375,40 @@ const Admin: React.FC = () => {
         return;
       }
       
+      // Verificar limite de tags (máximo 4)
+      const tagsArray = newBar.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+      if (tagsArray.length > 4) {
+        toast({
+          title: "Limite de tags",
+          description: "Você pode adicionar no máximo 4 tags para um bar.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Verificar limite de bar para usuários comuns (não super_admin)
+      if (!isEditMode && !isSuperAdmin) {
+        // Verificar se o usuário já tem um bar cadastrado
+        const { data: userBars, error: userBarsError } = await supabase
+          .from('bars')
+          .select('id')
+          .eq('user_id', user?.id);
+          
+        if (userBarsError) {
+          console.error("Erro ao verificar bares do usuário:", userBarsError);
+          throw userBarsError;
+        }
+        
+        if (userBars && userBars.length >= 1) {
+          toast({
+            title: "Limite de bares",
+            description: "Você só pode adicionar apenas um estabelecimento no momento",
+            variant: "destructive"
+          });
+          return;
+        }
+      }
+      
       let imageUrl = newBar.image;
       
       // Se houver um arquivo selecionado, fazer upload
@@ -411,7 +445,7 @@ const Admin: React.FC = () => {
         rating: parseFloat(newBar.rating.toString()),
         image: imageUrl || 'https://images.unsplash.com/photo-1514933651103-005eec06c04b',
         additional_images: additionalImages,
-        tags: newBar.tags.split(',').map(tag => tag.trim()),
+        tags: newBar.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0).slice(0, 4),
         events: [
           { name: newBar.eventName1, date: newBar.eventDate1, youtube_url: newBar.eventYoutubeUrl1 },
           { name: newBar.eventName2, date: newBar.eventDate2, youtube_url: newBar.eventYoutubeUrl2 },
@@ -502,8 +536,15 @@ const Admin: React.FC = () => {
       
       // Atualizar a lista de bares
       queryClient.invalidateQueries({ queryKey: ['bars'] });
+      queryClient.refetchQueries({ queryKey: ['bars'] });
       setIsEditMode(false);
       setCurrentBarId(null);
+      
+      // Aguardar um pouco e fazer uma segunda tentativa de atualizar a lista
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['bars'] });
+        queryClient.refetchQueries({ queryKey: ['bars'] });
+      }, 1000);
       
     } catch (error) {
       console.error("Erro ao salvar bar:", error);
@@ -845,763 +886,236 @@ const Admin: React.FC = () => {
           )}
           
           {/* Card de adição/edição de bar */}
-          <Card className="bg-nightlife-900 border-white/10">
-            <CardHeader>
-              <CardTitle>{isEditMode ? 'Editar Bar' : 'Adicionar Novo Bar'}</CardTitle>
-              <CardDescription>
-                {isEditMode 
-                  ? 'Atualize as informações do bar selecionado.' 
-                  : 'Preencha os campos abaixo para adicionar um novo bar ao site.'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-nightlife-800/50 p-3 rounded-md mb-4 text-white/70 text-sm">
-                <strong className="text-white">Informações sobre eventos:</strong>
-                <ul className="list-disc ml-5 mt-1 space-y-1">
-                  <li>Você pode cadastrar até 4 eventos para cada bar</li>
-                  <li>Apenas os 2 primeiros serão exibidos no card da página principal</li>
-                  <li>Todos os eventos serão exibidos na página de detalhes</li>
-                  <li>Links de vídeos do YouTube serão exibidos apenas na página de detalhes</li>
-                  <li>Os vídeos serão exibidos como miniaturas clicáveis que abrirão em um player</li>
-                </ul>
-              </div>
+            <Card className="bg-nightlife-900 border-white/10">
+              <CardHeader>
+                <CardTitle>{isEditMode ? 'Editar Bar' : 'Adicionar Novo Bar'}</CardTitle>
+                <CardDescription>
+                  {isEditMode 
+                    ? 'Atualize as informações do bar selecionado.' 
+                    : 'Preencha os campos abaixo para adicionar um novo bar ao site.'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="bg-nightlife-800/50 p-3 rounded-md mb-4 text-white/70 text-sm">
+                  <strong className="text-white">Informações sobre eventos:</strong>
+                  <ul className="list-disc ml-5 mt-1 space-y-1">
+                    <li>Você pode cadastrar até 4 eventos para cada bar</li>
+                    <li>Apenas os 2 primeiros serão exibidos no card da página principal</li>
+                    <li>Todos os eventos serão exibidos na página de detalhes</li>
+                    <li>Links de vídeos do YouTube serão exibidos apenas na página de detalhes</li>
+                    <li>Os vídeos serão exibidos como miniaturas clicáveis que abrirão em um player</li>
+                  </ul>
+                </div>
               <form onSubmit={addOrUpdateBar} className="space-y-4 max-w-full">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-white/70 mb-1 block">Nome do Bar</label>
+                      <Input
+                        name="name"
+                        placeholder="Nome do bar"
+                        value={newBar.name}
+                        onChange={handleBarChange}
+                        required
+                        className="bg-nightlife-950 border-white/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-white/70 mb-1 block">Localização</label>
+                      <Input
+                        name="location"
+                        placeholder="Bairro, Endereço"
+                        value={newBar.location}
+                        onChange={handleBarChange}
+                        required
+                        className="bg-nightlife-950 border-white/20"
+                      />
+                    </div>
+                  </div>
+                  
                   <div>
-                    <label className="text-sm text-white/70 mb-1 block">Nome do Bar</label>
+                    <label className="text-sm text-white/70 mb-1 block">Link Google Maps</label>
                     <Input
-                      name="name"
-                      placeholder="Nome do bar"
-                      value={newBar.name}
+                      name="maps_url"
+                      placeholder="https://maps.google.com/..."
+                      value={newBar.maps_url}
                       onChange={handleBarChange}
-                      required
                       className="bg-nightlife-950 border-white/20"
                     />
+                    <p className="text-xs text-white/50 mt-1">Cole o link do Google Maps para este local</p>
                   </div>
+                  
+                  <div className="border border-white/10 p-4 rounded-md mb-4">
+                    <h3 className="text-sm font-medium mb-3">Informações de Contato</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-sm text-white/70 mb-1 block">Telefone</label>
+                        <Input
+                          name="phone"
+                          placeholder="(11) 9999-9999"
+                          value={newBar.phone}
+                          onChange={handleBarChange}
+                          className="bg-nightlife-950 border-white/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm text-white/70 mb-1 block">Instagram</label>
+                        <Input
+                          name="instagram"
+                          placeholder="@instagram"
+                          value={newBar.instagram}
+                          onChange={handleBarChange}
+                          className="bg-nightlife-950 border-white/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm text-white/70 mb-1 block">Facebook</label>
+                        <Input
+                          name="facebook"
+                          placeholder="facebook.com/pagina"
+                          value={newBar.facebook}
+                          onChange={handleBarChange}
+                          className="bg-nightlife-950 border-white/20"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  
                   <div>
-                    <label className="text-sm text-white/70 mb-1 block">Localização</label>
-                    <Input
-                      name="location"
-                      placeholder="Bairro, Endereço"
-                      value={newBar.location}
-                      onChange={handleBarChange}
-                      required
-                      className="bg-nightlife-950 border-white/20"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="text-sm text-white/70 mb-1 block">Link Google Maps</label>
-                  <Input
-                    name="maps_url"
-                    placeholder="https://maps.google.com/..."
-                    value={newBar.maps_url}
-                    onChange={handleBarChange}
-                    className="bg-nightlife-950 border-white/20"
-                  />
-                  <p className="text-xs text-white/50 mt-1">Cole o link do Google Maps para este local</p>
-                </div>
-                
-                <div className="border border-white/10 p-4 rounded-md mb-4">
-                  <h3 className="text-sm font-medium mb-3">Informações de Contato</h3>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-sm text-white/70 mb-1 block">Telefone</label>
-                      <Input
-                        name="phone"
-                        placeholder="(11) 9999-9999"
-                        value={newBar.phone}
-                        onChange={handleBarChange}
-                        className="bg-nightlife-950 border-white/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-white/70 mb-1 block">Instagram</label>
-                      <Input
-                        name="instagram"
-                        placeholder="@instagram"
-                        value={newBar.instagram}
-                        onChange={handleBarChange}
-                        className="bg-nightlife-950 border-white/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-white/70 mb-1 block">Facebook</label>
-                      <Input
-                        name="facebook"
-                        placeholder="facebook.com/pagina"
-                        value={newBar.facebook}
-                        onChange={handleBarChange}
-                        className="bg-nightlife-950 border-white/20"
-                      />
-                    </div>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="text-sm text-white/70 mb-1 block">Horário de Funcionamento</label>
-                  <div className="border border-white/10 rounded-lg p-4 bg-nightlife-950/50 space-y-4">
+                    <label className="text-sm text-white/70 mb-1 block">Horário de Funcionamento</label>
+                    <div className="border border-white/10 rounded-lg p-4 bg-nightlife-950/50 space-y-4">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                      <h4 className="text-sm font-medium">Dias e Horários</h4>
-                    </div>
-                    
-                    {/* Segunda */}
-                    <div className="space-y-2">
+                        <h4 className="text-sm font-medium">Dias e Horários</h4>
+                      </div>
+                      
+                      {/* Segunda */}
+                      <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                         <label className={`text-sm ${getCurrentDayHour().includes('Segunda') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Segunda-feira</label>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
-                          <Input 
-                            type="time"
-                            placeholder="Abertura"
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Segunda') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('seg', 'open', e.target.value)}
-                            value={getHoursValue('seg', 'open')}
-                          />
-                          <span className="text-white/50">-</span>
-                          <Input 
-                            type="time"
-                            placeholder="Fechamento" 
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Segunda') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('seg', 'close', e.target.value)}
-                            value={getHoursValue('seg', 'close')}
-                          />
+                            <Input 
+                              type="time"
+                              placeholder="Abertura"
+                              className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Segunda') ? 'border-blue-500/50' : ''}`}
+                              onChange={(e) => handleHoursChange('seg', 'open', e.target.value)}
+                              value={getHoursValue('seg', 'open')}
+                            />
+                            <span className="text-white/50">-</span>
+                            <Input 
+                              type="time"
+                              placeholder="Fechamento" 
+                              className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Segunda') ? 'border-blue-500/50' : ''}`}
+                              onChange={(e) => handleHoursChange('seg', 'close', e.target.value)}
+                              value={getHoursValue('seg', 'close')}
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    {/* Terça */}
-                    <div className="space-y-2">
+                      
+                      {/* Terça */}
+                      <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                         <label className={`text-sm ${getCurrentDayHour().includes('Terça') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Terça-feira</label>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
-                          <Input 
-                            type="time"
-                            placeholder="Abertura"
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Terça') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('ter', 'open', e.target.value)}
-                            value={getHoursValue('ter', 'open')}
-                          />
-                          <span className="text-white/50">-</span>
-                          <Input 
-                            type="time"
-                            placeholder="Fechamento" 
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Terça') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('ter', 'close', e.target.value)}
-                            value={getHoursValue('ter', 'close')}
-                          />
+                            <Input 
+                              type="time"
+                              placeholder="Abertura"
+                              className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Terça') ? 'border-blue-500/50' : ''}`}
+                              onChange={(e) => handleHoursChange('ter', 'open', e.target.value)}
+                              value={getHoursValue('ter', 'open')}
+                            />
+                            <span className="text-white/50">-</span>
+                            <Input 
+                              type="time"
+                              placeholder="Fechamento" 
+                              className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Terça') ? 'border-blue-500/50' : ''}`}
+                              onChange={(e) => handleHoursChange('ter', 'close', e.target.value)}
+                              value={getHoursValue('ter', 'close')}
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    {/* Quarta */}
-                    <div className="space-y-2">
+                      
+                      {/* Quarta */}
+                      <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                         <label className={`text-sm ${getCurrentDayHour().includes('Quarta') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Quarta-feira</label>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
-                          <Input 
-                            type="time"
-                            placeholder="Abertura"
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quarta') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('qua', 'open', e.target.value)}
-                            value={getHoursValue('qua', 'open')}
-                          />
-                          <span className="text-white/50">-</span>
-                          <Input 
-                            type="time"
-                            placeholder="Fechamento" 
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quarta') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('qua', 'close', e.target.value)}
-                            value={getHoursValue('qua', 'close')}
-                          />
+                            <Input 
+                              type="time"
+                              placeholder="Abertura"
+                              className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quarta') ? 'border-blue-500/50' : ''}`}
+                              onChange={(e) => handleHoursChange('qua', 'open', e.target.value)}
+                              value={getHoursValue('qua', 'open')}
+                            />
+                            <span className="text-white/50">-</span>
+                            <Input 
+                              type="time"
+                              placeholder="Fechamento" 
+                              className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quarta') ? 'border-blue-500/50' : ''}`}
+                              onChange={(e) => handleHoursChange('qua', 'close', e.target.value)}
+                              value={getHoursValue('qua', 'close')}
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    {/* Quinta */}
-                    <div className="space-y-2">
+                      
+                      {/* Quinta */}
+                      <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                         <label className={`text-sm ${getCurrentDayHour().includes('Quinta') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Quinta-feira</label>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
-                          <Input 
-                            type="time"
-                            placeholder="Abertura"
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quinta') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('qui', 'open', e.target.value)}
-                            value={getHoursValue('qui', 'open')}
-                          />
-                          <span className="text-white/50">-</span>
-                          <Input 
-                            type="time"
-                            placeholder="Fechamento" 
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quinta') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('qui', 'close', e.target.value)}
-                            value={getHoursValue('qui', 'close')}
-                          />
+                            <Input 
+                              type="time"
+                              placeholder="Abertura"
+                              className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quinta') ? 'border-blue-500/50' : ''}`}
+                              onChange={(e) => handleHoursChange('qui', 'open', e.target.value)}
+                              value={getHoursValue('qui', 'open')}
+                            />
+                            <span className="text-white/50">-</span>
+                            <Input 
+                              type="time"
+                              placeholder="Fechamento" 
+                              className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quinta') ? 'border-blue-500/50' : ''}`}
+                              onChange={(e) => handleHoursChange('qui', 'close', e.target.value)}
+                              value={getHoursValue('qui', 'close')}
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    {/* Sexta */}
-                    <div className="space-y-2">
+                      
+                      {/* Sexta */}
+                      <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                         <label className={`text-sm ${getCurrentDayHour().includes('Sexta') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Sexta-feira</label>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
-                          <Input 
-                            type="time"
-                            placeholder="Abertura"
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Sexta') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('sex', 'open', e.target.value)}
-                            value={getHoursValue('sex', 'open')}
-                          />
-                          <span className="text-white/50">-</span>
-                          <Input 
-                            type="time"
-                            placeholder="Fechamento" 
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Sexta') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('sex', 'close', e.target.value)}
-                            value={getHoursValue('sex', 'close')}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Sábado */}
-                    <div className="space-y-2">
-                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                        <label className={`text-sm ${getCurrentDayHour().includes('Sábado') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Sábado</label>
-                        <div className="flex gap-2 items-center mx-auto sm:mx-0">
-                          <Input 
-                            type="time"
-                            placeholder="Abertura"
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Sábado') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('sab', 'open', e.target.value)}
-                            value={getHoursValue('sab', 'open')}
-                          />
-                          <span className="text-white/50">-</span>
-                          <Input 
-                            type="time"
-                            placeholder="Fechamento" 
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Sábado') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('sab', 'close', e.target.value)}
-                            value={getHoursValue('sab', 'close')}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Domingo */}
-                    <div className="space-y-2">
-                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                        <label className={`text-sm ${getCurrentDayHour().includes('Domingo') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Domingo</label>
-                        <div className="flex gap-2 items-center mx-auto sm:mx-0">
-                          <Input 
-                            type="time"
-                            placeholder="Abertura"
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Domingo') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('dom', 'open', e.target.value)}
-                            value={getHoursValue('dom', 'open')}
-                          />
-                          <span className="text-white/50">-</span>
-                          <Input 
-                            type="time"
-                            placeholder="Fechamento" 
-                            className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Domingo') ? 'border-blue-500/50' : ''}`}
-                            onChange={(e) => handleHoursChange('dom', 'close', e.target.value)}
-                            value={getHoursValue('dom', 'close')}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="mt-2 flex justify-between items-center">
-                      <p className="text-xs text-white/50">
-                        Os horários são utilizados para mostrar status de "Aberto" ou "Fechado" nos cards.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="text-sm text-white/70 mb-1 block">Descrição</label>
-                  <Textarea
-                    name="description"
-                    placeholder="Descrição do bar"
-                    value={newBar.description}
-                    onChange={handleBarChange}
-                    required
-                    className="bg-nightlife-950 border-white/20 h-[72px] resize-none"
-                  />
-                  <p className="text-xs text-white/50 mt-1">
-                    A descrição será limitada a 3 linhas no card principal. Texto completo visível apenas na visualização detalhada.
-                  </p>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm text-white/70 mb-1 block">Imagem Principal</label>
-                    <div className="flex flex-col gap-3">
-                      <div>
-                        {/* Botão para upload de imagem */}
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          className="border-white/20 w-full"
-                          onClick={handleUploadClick}
-                        >
-                          <Upload className="h-4 w-4 mr-2" />
-                          Selecionar Imagem Principal
-                        </Button>
-                      </div>
-                      
-                      {/* Input oculto para seleção de arquivo */}
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        className="hidden"
-                        accept="image/*"
-                        onChange={handleFileChange}
-                      />
-                      
-                      {/* Preview da imagem */}
-                      {(imagePreview || newBar.image) && (
-                        <div className="mt-2 relative w-full h-40 sm:h-48 bg-nightlife-800 rounded-md overflow-hidden group">
-                          <img 
-                            src={imagePreview || newBar.image} 
-                            alt="Preview" 
-                            className="w-full h-full object-cover"
-                          />
-                          <button
-                            type="button"
-                            onClick={removeMainImage}
-                            className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Remover imagem"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm text-white/70 mb-1 block">Avaliação (1-5)</label>
-                    <Input
-                      name="rating"
-                      type="number"
-                      min="1"
-                      max="5"
-                      step="0.1"
-                      value={newBar.rating}
-                      onChange={handleBarChange}
-                      required
-                      className="bg-nightlife-950 border-white/20"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="text-sm text-white/70 mb-1 block">Imagens Adicionais (até 3)</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {Array.from({ length: 3 }).map((_, index) => (
-                      <div key={index} className="flex flex-col gap-2">
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          className="border-white/20 w-full"
-                          onClick={() => handleAdditionalUploadClick(index)}
-                        >
-                          <Upload className="h-4 w-4 mr-2" />
-                          Imagem {index + 1}
-                        </Button>
-                        
-                        <input
-                          type="file"
-                          ref={el => additionalFileInputRefs.current[index] = el}
-                          className="hidden"
-                          accept="image/*"
-                          onChange={(e) => handleFileChange(e, false, index)}
-                        />
-                        
-                        {/* Preview da imagem adicional */}
-                        {(additionalImagePreviews[index] || (newBar.additional_images && newBar.additional_images[index])) && (
-                          <div className="relative w-full h-32 bg-nightlife-800 rounded-md overflow-hidden group">
-                            <img 
-                              src={additionalImagePreviews[index] || newBar.additional_images[index]} 
-                              alt={`Preview ${index + 1}`} 
-                              className="w-full h-full object-cover"
+                            <Input 
+                              type="time"
+                              placeholder="Abertura"
+                              className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Sexta') ? 'border-blue-500/50' : ''}`}
+                              onChange={(e) => handleHoursChange('sex', 'open', e.target.value)}
+                              value={getHoursValue('sex', 'open')}
                             />
-                            <button
-                              type="button"
-                              onClick={() => removeAdditionalImage(index)}
-                              className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Remover imagem"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-white/50 mt-1">Adicione até 3 imagens que serão exibidas na visualização detalhada</p>
-                </div>
-                
-                <div className="grid grid-cols-1 gap-4">
-                  <div>
-                    <label className="text-sm text-white/70 mb-1 block">Tags (separadas por vírgula)</label>
-                    <Input
-                      name="tags"
-                      placeholder="rock, happy hour, samba..."
-                      value={newBar.tags}
-                      onChange={handleBarChange}
-                      required
-                      className="bg-nightlife-950 border-white/20"
-                    />
-                    <p className="text-xs text-white/50 mt-1">Essas tags ajudam na busca e filtragem dos bares</p>
-                  </div>
-                </div>
-                
-                {/* Eventos */}
-                <div className="border border-white/10 p-4 rounded-md">
-                  <h3 className="text-sm font-medium mb-4">Eventos</h3>
-                  
-                  <div className="space-y-6">
-                    {/* Evento 1 */}
-                    <div className="space-y-3 pb-4 border-b border-white/10">
-                      <h4 className="text-sm text-white/70">Evento 1</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-white/70 mb-1 block">Nome do Evento</label>
-                          <Input
-                            name="eventName1"
-                            placeholder="Ex: Noite de Jazz"
-                            value={newBar.eventName1}
-                            onChange={handleBarChange}
-                            className="bg-nightlife-950 border-white/20"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-white/70 mb-1 block">Data</label>
-                          <Input
-                            name="eventDate1"
-                            placeholder="Ex: Toda quinta, 20h"
-                            value={newBar.eventDate1}
-                            onChange={handleBarChange}
-                            className="bg-nightlife-950 border-white/20"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-white/70 mb-1 block">Link do YouTube (opcional)</label>
-                        <Input
-                          name="eventYoutubeUrl1"
-                          placeholder="https://www.youtube.com/watch?v=..."
-                          value={newBar.eventYoutubeUrl1}
-                          onChange={handleBarChange}
-                          className="bg-nightlife-950 border-white/20"
-                        />
-                        {isValidYoutubeUrl(newBar.eventYoutubeUrl1) && (
-                          <div className="flex items-center mt-1">
-                            <img 
-                              src={`https://img.youtube.com/vi/${getYoutubeVideoId(newBar.eventYoutubeUrl1)}/default.jpg`} 
-                              alt="Miniatura do vídeo"
-                              className="w-16 h-12 object-cover rounded mr-2"
+                            <span className="text-white/50">-</span>
+                            <Input 
+                              type="time"
+                              placeholder="Fechamento" 
+                              className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Sexta') ? 'border-blue-500/50' : ''}`}
+                              onChange={(e) => handleHoursChange('sex', 'close', e.target.value)}
+                              value={getHoursValue('sex', 'close')}
                             />
-                            <span className="text-xs text-green-400">URL válida ✓</span>
                           </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* Evento 2 */}
-                    <div className="space-y-3 pb-4 border-b border-white/10">
-                      <h4 className="text-sm text-white/70">Evento 2</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-white/70 mb-1 block">Nome do Evento</label>
-                          <Input
-                            name="eventName2"
-                            placeholder="Ex: Tributo Rock"
-                            value={newBar.eventName2}
-                            onChange={handleBarChange}
-                            className="bg-nightlife-950 border-white/20"
-                          />
                         </div>
-                        <div>
-                          <label className="text-xs text-white/70 mb-1 block">Data</label>
-                          <Input
-                            name="eventDate2"
-                            placeholder="Ex: Sextas, 21h"
-                            value={newBar.eventDate2}
-                            onChange={handleBarChange}
-                            className="bg-nightlife-950 border-white/20"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-white/70 mb-1 block">Link do YouTube (opcional)</label>
-                        <Input
-                          name="eventYoutubeUrl2"
-                          placeholder="https://www.youtube.com/watch?v=..."
-                          value={newBar.eventYoutubeUrl2}
-                          onChange={handleBarChange}
-                          className="bg-nightlife-950 border-white/20"
-                        />
-                        {isValidYoutubeUrl(newBar.eventYoutubeUrl2) && (
-                          <div className="flex items-center mt-1">
-                            <img 
-                              src={`https://img.youtube.com/vi/${getYoutubeVideoId(newBar.eventYoutubeUrl2)}/default.jpg`} 
-                              alt="Miniatura do vídeo"
-                              className="w-16 h-12 object-cover rounded mr-2"
-                            />
-                            <span className="text-xs text-green-400">URL válida ✓</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* Evento 3 */}
-                    <div className="space-y-3 pb-4 border-b border-white/10">
-                      <h4 className="text-sm text-white/70">Evento 3</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-white/70 mb-1 block">Nome do Evento</label>
-                          <Input
-                            name="eventName3"
-                            placeholder="Ex: Samba ao Vivo"
-                            value={newBar.eventName3}
-                            onChange={handleBarChange}
-                            className="bg-nightlife-950 border-white/20"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-white/70 mb-1 block">Data</label>
-                          <Input
-                            name="eventDate3"
-                            placeholder="Ex: Sábados, 20h"
-                            value={newBar.eventDate3}
-                            onChange={handleBarChange}
-                            className="bg-nightlife-950 border-white/20"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-white/70 mb-1 block">Link do YouTube (opcional)</label>
-                        <Input
-                          name="eventYoutubeUrl3"
-                          placeholder="https://www.youtube.com/watch?v=..."
-                          value={newBar.eventYoutubeUrl3}
-                          onChange={handleBarChange}
-                          className="bg-nightlife-950 border-white/20"
-                        />
-                        {isValidYoutubeUrl(newBar.eventYoutubeUrl3) && (
-                          <div className="flex items-center mt-1">
-                            <img 
-                              src={`https://img.youtube.com/vi/${getYoutubeVideoId(newBar.eventYoutubeUrl3)}/default.jpg`} 
-                              alt="Miniatura do vídeo"
-                              className="w-16 h-12 object-cover rounded mr-2"
-                            />
-                            <span className="text-xs text-green-400">URL válida ✓</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* Evento 4 */}
-                    <div className="space-y-3">
-                      <h4 className="text-sm text-white/70">Evento 4</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-white/70 mb-1 block">Nome do Evento</label>
-                          <Input
-                            name="eventName4"
-                            placeholder="Ex: Karaokê"
-                            value={newBar.eventName4}
-                            onChange={handleBarChange}
-                            className="bg-nightlife-950 border-white/20"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-white/70 mb-1 block">Data</label>
-                          <Input
-                            name="eventDate4"
-                            placeholder="Ex: Domingos, 19h"
-                            value={newBar.eventDate4}
-                            onChange={handleBarChange}
-                            className="bg-nightlife-950 border-white/20"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-white/70 mb-1 block">Link do YouTube (opcional)</label>
-                        <Input
-                          name="eventYoutubeUrl4"
-                          placeholder="https://www.youtube.com/watch?v=..."
-                          value={newBar.eventYoutubeUrl4}
-                          onChange={handleBarChange}
-                          className="bg-nightlife-950 border-white/20"
-                        />
-                        {isValidYoutubeUrl(newBar.eventYoutubeUrl4) && (
-                          <div className="flex items-center mt-1">
-                            <img 
-                              src={`https://img.youtube.com/vi/${getYoutubeVideoId(newBar.eventYoutubeUrl4)}/default.jpg`} 
-                              alt="Miniatura do vídeo"
-                              className="w-16 h-12 object-cover rounded mr-2"
-                            />
-                            <span className="text-xs text-green-400">URL válida ✓</span>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
-                </div>
-                
-                <div className="flex gap-2">
-                  {isEditMode && (
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      className="flex-1 border-white/20"
-                      onClick={cancelEdit}
-                    >
-                      Cancelar
-                    </Button>
-                  )}
-                  <Button 
-                    type="submit" 
-                    className="flex-1 bg-nightlife-600 hover:bg-nightlife-700"
-                    disabled={isUploading}
-                  >
-                    {isUploading ? 'Enviando...' : isEditMode ? 'Salvar Alterações' : 'Adicionar Bar'}
-                  </Button>
                 </div>
               </form>
-            </CardContent>
-          </Card>
-          
-          <div className="mt-8">
-            <h2 className="text-xl font-semibold mb-4">
-              {isSuperAdmin 
-                ? `Bares Cadastrados (${filteredBars?.length || 0})` 
-                : "Meu Bar"}
-            </h2>
-            <div className="space-y-4">
-              {filteredBars?.map((bar) => (
-                <Card key={bar.id} className="bg-nightlife-900 border-white/10">
-                  <CardContent className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-md overflow-hidden flex-shrink-0">
-                        <img src={bar.image} alt={bar.name} className="w-full h-full object-cover" />
-                      </div>
-                      <div>
-                        <h3 className="font-medium">{bar.name}</h3>
-                        <p className="text-sm text-white/60">
-                          {bar.maps_url ? (
-                            <a 
-                              href={bar.maps_url} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="hover:underline inline-flex items-center"
-                            >
-                              {bar.location}
-                              <ArrowLeft className="h-3 w-3 ml-1 rotate-[135deg]" />
-                            </a>
-                          ) : (
-                            bar.location
-                          )}
-                        </p>
-                        {bar.phone && <p className="text-xs text-white/50">{bar.phone}</p>}
-                        <p className="text-sm text-white/60">{bar.rating.toFixed(1)} ⭐ • {bar.tags.join(', ')}</p>
-                        
-                        {bar.hours && <details className="text-xs text-white/50 mt-1">
-                          <summary className="cursor-pointer hover:text-white/70">Ver horário de funcionamento</summary>
-                          <div className="mt-1 p-2 bg-nightlife-800 rounded text-white/60">
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                              {bar.hours.split('\n').map((line, index) => {
-                                const parts = line.split(':');
-                                if (parts.length < 2) return null;
-                                
-                                const day = parts[0].trim();
-                                const time = parts.slice(1).join(':').trim();
-                                
-                                // Adiciona classe especial para destacar o dia atual
-                                const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long' }).toLowerCase();
-                                const isToday = day.toLowerCase().includes(today);
-                                
-                                return (
-                                  <div key={index} className={`flex flex-col p-1 rounded ${isToday ? 'bg-nightlife-700/50' : ''}`}>
-                                    <span className={`font-medium ${isToday ? 'text-white' : ''}`}>{day}</span>
-                                    <span>{time}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </details>}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="border-white/20"
-                        onClick={() => startEditBar(bar)}
-                      >
-                        Editar
-                      </Button>
-                      <Button 
-                        variant="destructive" 
-                        size="sm"
-                        onClick={() => startDeleteBar(bar.id)}
-                      >
-                        Excluir
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              
-              {/* Mostrar mensagem se não houver bares */}
-              {filteredBars?.length === 0 && (
-                <div className="text-center p-8 bg-nightlife-900 border border-white/10 rounded-md">
-                  <h3 className="text-lg font-medium mb-2">
-                    {isSuperAdmin 
-                      ? "Nenhum bar cadastrado" 
-                      : "Você ainda não tem um bar cadastrado"}
-                  </h3>
-                  <p className="text-sm text-white/60">
-                    {isSuperAdmin 
-                      ? "Adicione um novo bar utilizando o formulário acima" 
-                      : "Utilize o formulário acima para cadastrar seu bar"}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+            </Card>
+          )}
         </div>
       </div>
-      
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="bg-nightlife-900 border-white/10 text-white">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
-            <AlertDialogDescription className="text-white/70">
-              Tem certeza que deseja excluir este bar? Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="bg-transparent border-white/20 hover:bg-white/10 text-white">Cancelar</AlertDialogCancel>
-            <AlertDialogAction 
-              className="bg-red-600 hover:bg-red-700 text-white" 
-              onClick={confirmDeleteBar}
-            >
-              Excluir
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };
 
-export default Admin; 
+export default Admin;
