@@ -54,7 +54,7 @@ const Navbar: React.FC = () => {
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-6">
           <Link to="/" className="text-white/80 hover:text-nightlife-600 transition-colors">Início</Link>
-          <Link to="/bares" className="text-white/80 hover:text-nightlife-600 transition-colors">Bares</Link>
+          <Link to="/bares" className="text-white/80 hover:text-nightlife-600 transition-colors">Bares e Restaurantes</Link>
           <Link to="/admin" className="text-white/80 hover:text-nightlife-600 transition-colors">Entrar</Link>
           
           {/* Status de Login (bolinha verde) */}
@@ -117,7 +117,7 @@ const Navbar: React.FC = () => {
               className="text-white/80 hover:text-nightlife-600 transition-colors py-3 border-b border-white/10"
               onClick={toggleMobileMenu}
             >
-              Bares
+              Bares e Restaurantes
             </Link>
             <Link 
               to="/admin" 

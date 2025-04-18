@@ -7,9 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Search, Filter, Star, MapPin, X } from 'lucide-react';
+import { Search, Filter, Star, MapPin, X, Map } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useSearchParams } from 'react-router-dom';
+import BarCard from '@/components/BarCard';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { supabase } from '@/lib/supabase';
 
 // Função para embaralhar um array (algoritmo Fisher-Yates)
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -22,11 +25,34 @@ const shuffleArray = <T,>(array: T[]): T[] => {
 };
 
 const AllBars: React.FC = () => {
+  const isMobile = useIsMobile();
   const { data: bars, isLoading } = useBars();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<string>('random');
+  const [mapsUrl, setMapsUrl] = useState<string>('https://www.google.com/maps/search/bares+e+restaurantes');
   
+  // Buscar URL personalizada do Google Maps
+  useEffect(() => {
+    const fetchMapsUrl = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('site_settings')
+          .select('value')
+          .eq('key', 'maps_link')
+          .single();
+          
+        if (data && data.value) {
+          setMapsUrl(data.value);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar link do Google Maps:', error);
+      }
+    };
+    
+    fetchMapsUrl();
+  }, []);
+
   // Obter parâmetro de busca da URL quando a página carrega
   useEffect(() => {
     const searchFromUrl = searchParams.get('search');
@@ -102,11 +128,24 @@ const AllBars: React.FC = () => {
     <div className="min-h-screen flex flex-col bg-black text-white">
       <Navbar />
       
-      <main className="flex-grow px-4 py-8">
-        <div className="container mx-auto">
-          <h1 className="text-3xl md:text-4xl font-bold mb-8 text-center">
-            {searchTerm ? `Buscando por "${searchTerm}"` : "Todos os Bares"}
+      <main className="flex-grow px-2 sm:px-3 py-8">
+        <div className="container mx-auto max-w-[1400px]">
+          <h1 className="text-3xl md:text-4xl font-bold mb-2 text-center">
+            {searchTerm ? `Buscando por "${searchTerm}"` : "Bares e Restaurantes"}
           </h1>
+          
+          {/* Link para Google Maps */}
+          <div className="flex justify-center mb-8">
+            <a 
+              href={mapsUrl} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              <Map className="h-4 w-4" />
+              Descobrir por perto
+            </a>
+          </div>
           
           {/* Barra de busca e filtros */}
           <div className="mb-8 bg-nightlife-900/50 rounded-lg p-4 border border-nightlife-800">
@@ -116,7 +155,7 @@ const AllBars: React.FC = () => {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 h-4 w-4" />
                   <Input
                     type="text"
-                    placeholder="Buscar bares..."
+                    placeholder="Buscar bares e restaurantes..."
                     value={searchTerm}
                     onChange={handleSearchChange}
                     className="pl-10 bg-nightlife-950 border-nightlife-700"
@@ -181,77 +220,52 @@ const AllBars: React.FC = () => {
           </div>
 
           {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6 sm:gap-8 px-1`}>
               {Array(6).fill(0).map((_, index) => (
                 <div key={index} className="glass-card rounded-xl overflow-hidden">
-                  <Skeleton className="h-48 w-full" />
-                  <div className="p-5">
-                    <Skeleton className="h-6 w-3/4 mb-2" />
-                    <Skeleton className="h-4 w-1/2 mb-3" />
-                    <Skeleton className="h-4 w-full mb-2" />
-                    <Skeleton className="h-8 w-full mt-4" />
+                  <Skeleton className="h-52 w-full" />
+                  <div className="p-6">
+                    <Skeleton className="h-7 w-3/4 mb-3" />
+                    <Skeleton className="h-5 w-1/2 mb-4" />
+                    <Skeleton className="h-5 w-full mb-3" />
+                    <Skeleton className="h-5 w-full mb-3" />
+                    <Skeleton className="h-9 w-full mt-5" />
                   </div>
                 </div>
               ))}
             </div>
           ) : hasResults ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6 sm:gap-8 px-1`}>
               {filteredAndSortedBars.map((bar) => (
-                <Card key={bar.id} className="bg-black/40 backdrop-blur-sm border-white/10 overflow-hidden card-hover">
-                  <div className="h-48 overflow-hidden">
-                    <img 
-                      src={bar.image} 
-                      alt={bar.name} 
-                      className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
-                    />
-                  </div>
-                  <CardContent className="p-5">
-                    <h3 className="text-xl font-bold text-white mb-2">{bar.name}</h3>
-                    
-                    <div className="flex items-center gap-1 mb-1 text-white/70">
-                      <Star className="w-4 h-4 text-nightlife-400" />
-                      <span className="text-sm">{bar.rating.toFixed(1)}</span>
-                    </div>
-                    
-                    <div className="flex items-center gap-1 mb-3 text-white/70">
-                      <MapPin className="w-4 h-4 text-nightlife-400" />
-                      <span className="text-sm">{bar.location}</span>
-                    </div>
-                    
-                    <p className="text-white/80 text-sm mb-4 line-clamp-3">{bar.description}</p>
-                    
-                    <div className="flex flex-wrap gap-1 mb-4">
-                      {bar.tags.map((tag, index) => (
-                        <Badge key={index} variant="outline" className="bg-nightlife-800/50 text-white">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                    
-                    <button className="w-full mt-2 py-2 bg-nightlife-600 hover:bg-nightlife-700 text-white rounded-lg transition-colors text-sm font-medium">
-                      Ver Detalhes
-                    </button>
-                  </CardContent>
-                </Card>
+                <BarCard 
+                  key={bar.id} 
+                  name={bar.name}
+                  location={bar.location}
+                  description={bar.description}
+                  rating={bar.rating}
+                  image={bar.image}
+                  additional_images={bar.additional_images}
+                  events={bar.events}
+                  tags={bar.tags}
+                  hours={bar.hours}
+                  maps_url={bar.maps_url}
+                  phone={bar.phone}
+                  instagram={bar.instagram}
+                  facebook={bar.facebook}
+                />
               ))}
             </div>
           ) : (
             <div className="text-center py-16 px-4">
-              <h3 className="text-xl font-semibold mb-2">Nenhum bar encontrado</h3>
-              <p className="text-white/70 mb-6">Nenhum bar corresponde aos filtros aplicados.</p>
+              <h3 className="text-xl font-semibold mb-2">Nenhum resultado encontrado</h3>
+              <p className="text-white/70 mb-6">Nenhum bar ou restaurante corresponde aos filtros aplicados.</p>
               <Button 
                 variant="outline" 
                 onClick={handleClearFilters} 
                 className="border-nightlife-600 hover:bg-nightlife-600/20"
               >
-                Ver todos os bares
+                Ver todos os bares e restaurantes
               </Button>
-            </div>
-          )}
-          
-          {hasResults && (
-            <div className="mt-6 text-center text-white/70">
-              <p>Exibindo {filteredAndSortedBars.length} {filteredAndSortedBars.length === 1 ? 'bar' : 'bares'}</p>
             </div>
           )}
         </div>

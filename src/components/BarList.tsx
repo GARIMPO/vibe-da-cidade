@@ -162,35 +162,35 @@ const BarList: React.FC<BarListProps> = ({ searchTerm = '' }) => {
   }, [bars, searchTerm]);
 
   return (
-    <section id="featured" className="py-16 px-4">
-      <div className="container mx-auto">
+    <section id="featured" className="py-16 px-2 sm:px-3">
+      <div className="container mx-auto max-w-[1400px]">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold mb-2">
             {searchTerm ? `Resultados para "${searchTerm}"` : "Em Destaque"}
           </h2>
           {searchTerm && barData.length === 0 && (
-            <p className="text-white/70">Nenhum bar encontrado com esse termo. Tente outra busca.</p>
+            <p className="text-white/70">Nenhum bar ou restaurante encontrado com esse termo. Tente outra busca.</p>
           )}
         </div>
         
         {isLoading ? (
           // Mostrar esqueletos durante o carregamento
-          <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2 lg:grid-cols-3'} gap-6`}>
+          <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6 sm:gap-8 px-1`}>
             {Array(6).fill(0).map((_, index) => (
               <div key={index} className="glass-card rounded-xl overflow-hidden">
-                <Skeleton className="h-48 w-full" />
-                <div className="p-5">
-                  <Skeleton className="h-6 w-3/4 mb-2" />
-                  <Skeleton className="h-4 w-1/2 mb-3" />
-                  <Skeleton className="h-4 w-full mb-2" />
-                  <Skeleton className="h-4 w-full mb-2" />
-                  <Skeleton className="h-8 w-full mt-4" />
+                <Skeleton className="h-52 w-full" />
+                <div className="p-6">
+                  <Skeleton className="h-7 w-3/4 mb-3" />
+                  <Skeleton className="h-5 w-1/2 mb-4" />
+                  <Skeleton className="h-5 w-full mb-3" />
+                  <Skeleton className="h-5 w-full mb-3" />
+                  <Skeleton className="h-9 w-full mt-5" />
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2 lg:grid-cols-3'} gap-6`}>
+          <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6 sm:gap-8 px-1`}>
             {barData.map((bar) => (
               <BarCard 
                 key={bar.id} 
@@ -212,12 +212,12 @@ const BarList: React.FC<BarListProps> = ({ searchTerm = '' }) => {
           </div>
         )}
         
-        <div className="mt-12 text-center">
+        <div className="mt-14 text-center">
           <Link 
             to={searchTerm ? `/bares?search=${encodeURIComponent(searchTerm)}` : "/bares"} 
-            className="px-8 py-3 bg-transparent border border-nightlife-500 hover:bg-nightlife-500/10 text-white rounded-full font-medium transition-colors inline-block"
+            className="px-10 py-3 bg-transparent border border-nightlife-500 hover:bg-nightlife-500/10 text-white rounded-full font-medium transition-colors inline-block"
           >
-            {searchTerm ? "Ver Todos os Resultados" : "Ver Todos os Bares"}
+            {searchTerm ? "Ver Todos os Resultados" : "Ver Todos os Bares e Restaurantes"}
           </Link>
         </div>
       </div>

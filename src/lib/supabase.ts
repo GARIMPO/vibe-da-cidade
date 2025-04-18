@@ -138,6 +138,7 @@ function shuffleArray<T>(array: T[]): T[] {
 export async function uploadImage(file: File, bucket: string = 'bar-images'): Promise<string | null> {
   try {
     console.log(`Iniciando upload para o bucket ${bucket}`, file);
+    console.log(`Tipo de arquivo: ${file.type}, tamanho: ${file.size} bytes`);
     
     // Validar tipo de arquivo
     const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -159,6 +160,7 @@ export async function uploadImage(file: File, bucket: string = 'bar-images'): Pr
     const filePath = `${fileName}`;
     
     console.log(`Nome do arquivo gerado: ${filePath}`);
+    console.log(`Usando URL do Supabase: ${supabaseUrl}`);
     
     // Upload para o bucket especificado no Supabase Storage
     const { data, error } = await supabase.storage
@@ -173,8 +175,16 @@ export async function uploadImage(file: File, bucket: string = 'bar-images'): Pr
     
     if (error) {
       console.error('Erro detalhado do Supabase:', error);
+      console.error('Mensagem de erro:', error.message);
+      console.error('Nome do erro:', error.name);
+      console.error('Erro completo:', JSON.stringify(error, null, 2));
+      
       if (error.message.includes('Permission denied')) {
         throw new Error('Permissão negada ao fazer upload da imagem. Verifique as permissões do bucket.');
+      } else if (error.message.includes('Access forbidden')) {
+        throw new Error('Acesso proibido. Verifique a configuração de CORS no Supabase.');
+      } else if (error.message.includes('authentication')) {
+        throw new Error('Erro de autenticação. Verifique a chave anônima do Supabase.');
       }
       throw error;
     }
@@ -191,8 +201,10 @@ export async function uploadImage(file: File, bucket: string = 'bar-images'): Pr
     console.error("Erro ao fazer upload da imagem:", error);
     
     if (error instanceof Error) {
+      console.error("Stack trace:", error.stack);
       throw new Error(`Erro ao fazer upload: ${error.message}`);
     } else {
+      console.error("Erro não é uma instância de Error:", typeof error);
       throw new Error('Ocorreu um erro desconhecido ao fazer upload da imagem');
     }
   }

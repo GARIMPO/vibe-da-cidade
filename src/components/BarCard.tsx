@@ -315,45 +315,45 @@ const BarCard: React.FC<BarCardProps> = ({
     <>
     <div className={`glass-card rounded-xl overflow-hidden card-hover ${isMobile ? 'w-full' : ''}`}>
       <div className={`${isMobile ? 'flex flex-col md:flex-row' : ''}`}>
-        <div className={`${isMobile ? 'w-full md:w-full h-48' : 'h-48'} relative overflow-hidden`}>
+        <div className={`${isMobile ? 'w-full md:w-full h-52' : 'h-52'} relative overflow-hidden`}>
           <img 
             src={image} 
             alt={name} 
             className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
           />
-          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-md flex items-center gap-1">
+          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm px-2.5 py-1.5 rounded-md flex items-center gap-1.5">
             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
             <span className="text-white font-medium text-sm">{rating.toFixed(1)}</span>
           </div>
         </div>
         
-        <div className={`p-5 ${isMobile ? 'w-full' : ''}`}>
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-xl font-bold text-white">{name}</h3>
+        <div className={`p-6 ${isMobile ? 'w-full' : ''}`}>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-2xl font-bold text-white">{name}</h3>
               {hours && (
-                <div className="flex items-center gap-1">
-                  <div className={`w-2.5 h-2.5 rounded-full animate-pulse ${isOpen ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-red-500 shadow-lg shadow-red-500/30'}`}></div>
-                  <span className={`text-xs font-medium ${isOpen ? 'text-green-400' : 'text-red-400'}`}>
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-3 h-3 rounded-full animate-pulse ${isOpen ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-red-500 shadow-lg shadow-red-500/30'}`}></div>
+                  <span className={`text-sm font-medium ${isOpen ? 'text-green-400' : 'text-red-400'}`}>
                     {isOpen ? 'Aberto agora' : 'Fechado'}
                   </span>
                 </div>
               )}
             </div>
-          <div className="flex items-center gap-1 mb-3 text-white/70">
+          <div className="flex items-center gap-1.5 mb-3 text-white/70">
             <MapPin className="w-4 h-4" />
-            <span className="text-sm">{location}</span>
+            <span className="text-base">{location}</span>
           </div>
           
-          <p className="text-gray-400 text-sm line-clamp-3 mb-3">
+          <p className="text-gray-400 text-base line-clamp-3 mb-4">
             {truncateDescription(description)}
           </p>
           
-          <div className="mb-5 mt-5 flex flex-wrap gap-1.5">
+          <div className="mb-5 mt-5 flex flex-wrap gap-2">
             {tags.map((tag, index) => (
               <Badge 
                 key={index}
                 variant="outline" 
-                className="bg-nightlife-950/50 text-white/90 border-nightlife-700/50"
+                className="bg-nightlife-950/50 text-white/90 border-nightlife-700/50 text-sm px-3 py-0.5"
               >
                 {tag}
               </Badge>
@@ -361,18 +361,18 @@ const BarCard: React.FC<BarCardProps> = ({
           </div>
           
           {events.length > 0 && (
-            <div className="border-t border-white/10 pt-3 mt-3">
-              <h4 className="text-sm font-medium text-white/90 mb-2 flex items-center gap-1">
+            <div className="border-t border-white/10 pt-4 mt-4">
+              <h4 className="text-base font-medium text-white/90 mb-3 flex items-center gap-1.5">
                 <Calendar className="w-4 h-4 text-nightlife-400" />
                 Próximos Eventos
               </h4>
-              <ul className="space-y-2">
+              <ul className="space-y-3">
                 {events.slice(0, 2).map((event, index) => (
-                  <li key={index} className="flex items-center gap-2">
-                    <Music className="w-4 h-4 text-nightlife-400" />
+                  <li key={index} className="flex items-center gap-2.5">
+                    <Music className="w-5 h-5 text-nightlife-400" />
                     <div>
-                      <p className="text-white text-sm font-medium">{event.name}</p>
-                      <p className="text-white/60 text-xs">{event.date}</p>
+                      <p className="text-white text-base font-medium">{event.name}</p>
+                      <p className="text-white/60 text-sm">{event.date}</p>
                     </div>
                   </li>
                 ))}
@@ -382,7 +382,7 @@ const BarCard: React.FC<BarCardProps> = ({
           
             <button 
               onClick={() => setDetailsOpen(true)}
-              className="w-full mt-4 py-2 bg-nightlife-600 hover:bg-nightlife-700 text-white rounded-lg transition-colors text-sm font-medium"
+              className="w-full mt-5 py-2.5 bg-nightlife-600 hover:bg-nightlife-700 text-white rounded-lg transition-colors text-base font-medium"
             >
             Ver Detalhes
           </button>
@@ -406,9 +406,6 @@ const BarCard: React.FC<BarCardProps> = ({
                   <div className={`w-3 h-3 rounded-full animate-pulse ${isOpen ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-red-500 shadow-lg shadow-red-500/30'}`}></div>
                   <span className={`text-sm font-medium ${isOpen ? 'text-green-400' : 'text-red-400'}`}>
                     {isOpen ? 'Aberto agora' : 'Fechado'}
-                  </span>
-                  <span className="text-sm text-white/70 ml-2">
-                    (Horário atual: {currentTime})
                   </span>
                 </div>
               )}
@@ -550,7 +547,7 @@ const BarCard: React.FC<BarCardProps> = ({
                           rel="noopener noreferrer"
                           className="hover:text-nightlife-500 transition-colors"
                         >
-                          {instagram}
+                          Instagram
                         </a>
                       </div>
                     )}
