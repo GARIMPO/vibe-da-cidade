@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase';
 
 const Index: React.FC = () => {
   const [coverImage, setCoverImage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   
   // Buscar a URL da imagem de capa das configurações do site
   useEffect(() => {
