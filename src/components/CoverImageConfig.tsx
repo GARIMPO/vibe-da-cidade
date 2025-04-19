@@ -1,24 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Check, Save, Image, ChevronDown, ChevronUp } from 'lucide-react';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { supabase } from '@/lib/supabase';
+import { Image, ChevronDown } from 'lucide-react';
+import * as Accordion from '@radix-ui/react-accordion';
 
 const CoverImageConfig: React.FC = () => {
-  const { toast } = useToast();
   const [coverImageUrl, setCoverImageUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [previewVisible, setPreviewVisible] = useState<boolean>(false);
-  const [isOpen, setIsOpen] = useState<boolean>(false);
+  const [isPreviewVisible, setIsPreviewVisible] = useState<boolean>(false);
+  const [isUrlValid, setIsUrlValid] = useState<boolean>(false);
+  const [accordionValue, setAccordionValue] = useState<string>('');
+  const { toast } = useToast();
 
-  // Buscar a URL atual da imagem de capa
+  // Buscar URL atual da imagem de capa
   useEffect(() => {
     const fetchCoverImage = async () => {
       setIsLoading(true);
@@ -30,16 +26,18 @@ const CoverImageConfig: React.FC = () => {
           .single();
           
         if (error) {
-          console.error('Erro ao buscar configuração:', error);
+          console.error('Erro ao buscar imagem de capa:', error);
           return;
         }
-          
-        if (data && data.value) {
+        
+        if (data?.value) {
           setCoverImageUrl(data.value);
-          setPreviewVisible(true);
+          setIsUrlValid(true);
+          setIsPreviewVisible(true);
+          setAccordionValue('preview');
         }
       } catch (error) {
-        console.error('Erro ao buscar configuração de capa:', error);
+        console.error('Erro ao buscar configurações:', error);
       } finally {
         setIsLoading(false);
       }
@@ -48,61 +46,40 @@ const CoverImageConfig: React.FC = () => {
     fetchCoverImage();
   }, []);
 
-  // Salvar a nova URL da imagem de capa
+  // Salvar a URL da imagem de capa
   const saveCoverImage = async () => {
-    if (!coverImageUrl.trim()) {
+    if (!isUrlValid) {
       toast({
         title: "URL inválida",
-        description: "Por favor, insira uma URL válida para a imagem de capa.",
+        description: "Por favor, insira uma URL de imagem válida",
         variant: "destructive"
       });
       return;
     }
     
-    setIsSaving(true);
-    console.log("Iniciando salvamento da URL da capa:", coverImageUrl);
-    
-    // Configurar um timeout de segurança para resetar o estado após 10 segundos
-    const safetyTimeout = setTimeout(() => {
-      if (isSaving) {
-        console.log("Timeout de segurança acionado - resetando estado de salvamento");
-        setIsSaving(false);
-        toast({
-          title: "Aviso",
-          description: "A operação está demorando mais que o esperado. Verifique o console para mais detalhes.",
-          variant: "destructive"
-        });
-      }
-    }, 10000);
-    
+    setIsLoading(true);
     try {
       // Verificar se a configuração já existe
-      console.log("Verificando se a configuração já existe...");
-      const { data: existingConfig, error: checkError } = await supabase
+      const { data: existingConfig, error: fetchError } = await supabase
         .from('site_settings')
         .select('id')
         .eq('key', 'cover_image')
-        .maybeSingle();
-        
-      if (checkError) {
-        console.error('Erro ao verificar configuração existente:', checkError);
-        throw checkError;
-      }
+        .single();
       
-      console.log("Resultado da verificação:", existingConfig ? "Configuração encontrada" : "Configuração não encontrada");
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        throw fetchError;
+      }
       
       let result;
       
       if (existingConfig) {
         // Atualizar configuração existente
-        console.log("Atualizando configuração existente...");
         result = await supabase
           .from('site_settings')
           .update({ value: coverImageUrl })
           .eq('key', 'cover_image');
       } else {
         // Criar nova configuração
-        console.log("Criando nova configuração...");
         result = await supabase
           .from('site_settings')
           .insert([{ 
@@ -112,128 +89,139 @@ const CoverImageConfig: React.FC = () => {
           }]);
       }
       
-      console.log("Resultado da operação:", result);
-      
       if (result.error) {
-        console.error('Erro na operação do Supabase:', result.error);
         throw result.error;
       }
       
-      console.log("Salvamento concluído com sucesso!");
       toast({
         title: "Configuração salva",
-        description: "A imagem de capa foi atualizada com sucesso.",
+        description: "A imagem de capa foi atualizada com sucesso",
         variant: "default"
       });
-      setIsOpen(true); // Abrir o acordeão após salvar com sucesso
-    } catch (error: any) {
-      console.error('Erro ao salvar configuração de capa:', error);
+      
+      // Resetar o estado após sucesso
+      setIsLoading(false);
+      setIsUrlValid(true);
+      
+    } catch (error) {
+      console.error('Erro ao salvar configuração:', error);
       toast({
-        title: "Erro",
-        description: `Não foi possível salvar a configuração: ${error.message || 'Erro desconhecido'}`,
+        title: "Erro ao salvar",
+        description: "Não foi possível salvar a configuração. Tente novamente.",
         variant: "destructive"
       });
-    } finally {
-      clearTimeout(safetyTimeout);
-      setIsSaving(false);
-      console.log("Estado de salvamento resetado");
+      setIsLoading(false);
+      setIsUrlValid(false);
     }
   };
-
-  // Verificar a URL da imagem
+  
+  // Verificar se a URL fornecida é uma imagem válida
   const checkImageUrl = () => {
-    if (!coverImageUrl.trim()) return;
-    setPreviewVisible(true);
-    setIsOpen(true); // Abrir o acordeão ao visualizar
+    if (!coverImageUrl) {
+      setIsPreviewVisible(false);
+      setIsUrlValid(false);
+      setAccordionValue('');
+      return;
+    }
+    
+    // Verificar se a URL parece ser uma imagem
+    const isImageUrl = /\.(jpg|jpeg|png|webp|avif|gif)($|\?)/i.test(coverImageUrl);
+    
+    if (!isImageUrl) {
+      toast({
+        title: "URL inválida",
+        description: "A URL não parece ser uma imagem válida",
+        variant: "destructive"
+      });
+      setIsPreviewVisible(false);
+      setIsUrlValid(false);
+      setAccordionValue('');
+      return;
+    }
+    
+    setIsPreviewVisible(true);
+    setIsUrlValid(true);
+    setAccordionValue('preview');
   };
 
   return (
-    <div className="space-y-4">
-      <div>
-        <label className="text-sm text-white/70 mb-2 block">URL da Imagem de Capa</label>
+    <div className="w-full space-y-4">
+      <div className="flex flex-col space-y-2">
+        <label htmlFor="cover-image-url" className="text-sm font-medium">
+          URL da Imagem de Capa
+        </label>
         <div className="flex gap-2">
           <Input
+            id="cover-image-url"
             type="text"
             value={coverImageUrl}
             onChange={(e) => setCoverImageUrl(e.target.value)}
-            placeholder="https://example.com/image.jpg"
-            className="bg-nightlife-950 border-white/20 flex-1"
-            disabled={isLoading || isSaving}
+            placeholder="https://exemplo.com/imagem.jpg"
+            className="bg-nightlife-950 border-white/20"
+            disabled={isLoading}
           />
           <Button 
-            type="button" 
-            variant="outline" 
-            className="border-white/20"
-            onClick={checkImageUrl}
-            disabled={!coverImageUrl.trim() || isLoading || isSaving}
+            onClick={checkImageUrl} 
+            variant="secondary"
+            disabled={isLoading || !coverImageUrl}
+            size="sm"
           >
             <Image className="h-4 w-4 mr-2" />
             Visualizar
           </Button>
         </div>
-        <p className="text-xs text-white/50 mt-1">
-          Insira a URL de uma imagem para ser usada como capa na página inicial.
-          Recomendação: utilize imagens de alta qualidade em formato paisagem (1920x1080 ou maior).
+        <p className="text-sm text-muted-foreground">
+          Insira a URL de uma imagem para ser usada como capa na página inicial
         </p>
       </div>
       
-      {previewVisible && coverImageUrl && (
-        <Collapsible
-          open={isOpen}
-          onOpenChange={setIsOpen}
-          className="border border-white/10 rounded-lg overflow-hidden"
+      {isPreviewVisible && (
+        <Accordion.Root 
+          type="single" 
+          collapsible 
+          className="w-full"
+          value={accordionValue}
+          onValueChange={setAccordionValue}
         >
-          <div className="flex justify-between items-center p-1 px-2 bg-nightlife-800">
-            <p className="text-xs text-white/70">Pré-visualização</p>
-            <CollapsibleTrigger asChild>
-              <Button variant="ghost" size="sm" className="p-0 h-6 w-6">
-                {isOpen ? (
-                  <ChevronUp className="h-3 w-3 text-white/70" />
-                ) : (
-                  <ChevronDown className="h-3 w-3 text-white/70" />
-                )}
-              </Button>
-            </CollapsibleTrigger>
-          </div>
-          <CollapsibleContent>
-            <div className="flex items-center justify-center bg-nightlife-950/70 p-1">
-              <img 
-                src={coverImageUrl} 
-                alt="Pré-visualização" 
-                className="max-w-full max-h-[180px] object-contain"
-                onError={() => {
-                  toast({
-                    title: "Erro na imagem",
-                    description: "Não foi possível carregar a imagem. Verifique a URL e tente novamente.",
-                    variant: "destructive"
-                  });
-                }}
-              />
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
+          <Accordion.Item value="preview" className="border rounded-md overflow-hidden">
+            <Accordion.Header className="flex">
+              <Accordion.Trigger className="flex flex-1 items-center justify-between py-2 px-4 text-sm font-medium bg-muted hover:bg-muted/80 transition-colors">
+                <span>Preview da Imagem</span>
+                <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200" />
+              </Accordion.Trigger>
+            </Accordion.Header>
+            <Accordion.Content className="overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
+              <div className="p-4">
+                <div className="w-full max-w-[300px] mx-auto aspect-video overflow-hidden bg-muted relative rounded-md">
+                  <img 
+                    src={coverImageUrl} 
+                    alt="Preview da imagem de capa" 
+                    className="w-full h-full object-cover"
+                    onError={() => {
+                      setIsPreviewVisible(false);
+                      setIsUrlValid(false);
+                      setAccordionValue('');
+                      toast({
+                        title: "Erro ao carregar imagem",
+                        description: "Não foi possível carregar a imagem. Verifique se a URL está correta.",
+                        variant: "destructive"
+                      });
+                    }}
+                  />
+                </div>
+              </div>
+            </Accordion.Content>
+          </Accordion.Item>
+        </Accordion.Root>
       )}
       
-      <div className="flex justify-end mt-4">
-        <Button 
-          type="button" 
-          className="bg-nightlife-600 hover:bg-nightlife-700"
-          onClick={saveCoverImage}
-          disabled={isLoading || isSaving}
-        >
-          {isSaving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Salvando...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4 mr-2" />
-              Salvar Configuração
-            </>
-          )}
-        </Button>
-      </div>
+      <Button
+        onClick={saveCoverImage}
+        disabled={isLoading || !isUrlValid}
+        className="w-full bg-nightlife-600 hover:bg-nightlife-700"
+      >
+        {isLoading ? "Salvando..." : "Salvar Configuração"}
+      </Button>
     </div>
   );
 };

@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import GradientText from '@/components/GradientText';
 import { supabase } from '@/lib/supabase';
 
+const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1514933651103-005eec06c04b?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=774&q=80';
+
 const Index: React.FC = () => {
-  const [coverImage, setCoverImage] = useState<string | null>(null);
+  const [coverImage, setCoverImage] = useState<string>(DEFAULT_COVER_IMAGE);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   
   // Buscar a URL da imagem de capa das configurações do site
@@ -23,7 +25,7 @@ const Index: React.FC = () => {
           .eq('key', 'cover_image')
           .single();
           
-        if (data && data.value) {
+        if (data?.value) {
           setCoverImage(data.value);
         }
       } catch (error) {
@@ -42,18 +44,16 @@ const Index: React.FC = () => {
       <main className="flex-grow">
         <div className="relative h-[80vh] flex items-center justify-center">
           {/* Imagem de fundo com overlay */}
-          {coverImage && (
-            <div 
-              className="absolute inset-0 bg-cover bg-center bg-no-repeat z-0" 
-              style={{ 
-                backgroundImage: `url(${coverImage})`,
-                backgroundPosition: 'center 30%'
-              }}
-            >
-              {/* Overlay gradiente para garantir legibilidade do texto */}
-              <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-black z-0"></div>
-            </div>
-          )}
+          <div 
+            className="absolute inset-0 bg-cover bg-center bg-no-repeat z-0" 
+            style={{ 
+              backgroundImage: `url(${coverImage})`,
+              backgroundPosition: 'center 30%'
+            }}
+          >
+            {/* Overlay gradiente para garantir legibilidade do texto */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-black z-0"></div>
+          </div>
           
           {/* Conteúdo */}
           <div className="relative z-10 flex flex-col items-center justify-center space-y-6 px-4 text-center">

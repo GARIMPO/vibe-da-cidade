@@ -15,7 +15,7 @@ function shuffleArray<T>(array: T[]): T[] {
   return newArray;
 }
 
-// Os dados mockados ainda são mantidos como fallback
+// Dados mockados como fallback
 const mockBarData = [
   {
     id: 1,
@@ -131,97 +131,46 @@ interface BarListProps {
 
 const BarList: React.FC<BarListProps> = ({ searchTerm = '' }) => {
   const isMobile = useIsMobile();
+  const { data: bars = [], isLoading, error } = useBars();
   
-  // Buscar dados do Supabase
-  const { data: bars, isLoading, error } = useBars();
+  // Usar dados mockados se não houver dados do Supabase
+  const displayBars = useMemo(() => {
+    const barsToDisplay = bars.length > 0 ? bars : mockBarData;
+    return shuffleArray(barsToDisplay);
+  }, [bars]);
 
-  // Filtrar bares com base no termo de busca e manter apenas 6 deles
-  const barData = useMemo(() => {
-    if (!bars) return [];
-    
-    // Se houver um termo de busca, filtrar os bares
-    let filtered = bars;
-    if (searchTerm.trim()) {
-      filtered = bars.filter(bar => 
-        bar.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        bar.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        bar.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (bar.tags && bar.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
-      );
-    }
-    
-    // Se não houver resultados de busca mas houver um termo, mostrar mensagem vazia
-    if (filtered.length === 0 && searchTerm.trim()) {
-      return [];
-    }
-    
-    // Se não houver um termo de busca ou o termo não retornou resultados suficientes, mostrar aleatoriamente
-    return searchTerm.trim() 
-      ? filtered.slice(0, 6) 
-      : shuffleArray(filtered).slice(0, 6);
-  }, [bars, searchTerm]);
-
-  return (
-    <section id="featured" className="py-16 px-2 sm:px-3">
-      <div className="container mx-auto max-w-[1400px]">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold mb-2">
-            {searchTerm ? `Resultados para "${searchTerm}"` : "Em Destaque"}
-          </h2>
-          {searchTerm && barData.length === 0 && (
-            <p className="text-white/70">Nenhum bar ou restaurante encontrado com esse termo. Tente outra busca.</p>
-          )}
-        </div>
-        
-        {isLoading ? (
-          // Mostrar esqueletos durante o carregamento
-          <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6 sm:gap-8 px-1`}>
-            {Array(6).fill(0).map((_, index) => (
-              <div key={index} className="glass-card rounded-xl overflow-hidden">
-                <Skeleton className="h-52 w-full" />
-                <div className="p-6">
-                  <Skeleton className="h-7 w-3/4 mb-3" />
-                  <Skeleton className="h-5 w-1/2 mb-4" />
-                  <Skeleton className="h-5 w-full mb-3" />
-                  <Skeleton className="h-5 w-full mb-3" />
-                  <Skeleton className="h-9 w-full mt-5" />
-                </div>
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, index) => (
+            <div key={index} className="bg-nightlife-900 rounded-lg overflow-hidden shadow-lg">
+              <Skeleton className="h-48 w-full" />
+              <div className="p-4">
+                <Skeleton className="h-6 w-3/4 mb-2" />
+                <Skeleton className="h-4 w-1/2 mb-4" />
+                <Skeleton className="h-4 w-full mb-2" />
+                <Skeleton className="h-4 w-2/3" />
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6 sm:gap-8 px-1`}>
-            {barData.map((bar) => (
-              <BarCard 
-                key={bar.id} 
-                name={bar.name}
-                location={bar.location}
-                description={bar.description}
-                rating={bar.rating}
-                image={bar.image}
-                additional_images={bar.additional_images}
-                events={bar.events}
-                tags={bar.tags}
-                hours={bar.hours}
-                maps_url={bar.maps_url}
-                phone={bar.phone}
-                instagram={bar.instagram}
-                facebook={bar.facebook}
-              />
-            ))}
-          </div>
-        )}
-        
-        <div className="mt-14 text-center">
-          <Link 
-            to={searchTerm ? `/bares?search=${encodeURIComponent(searchTerm)}` : "/bares"} 
-            className="px-10 py-3 bg-transparent border border-nightlife-500 hover:bg-nightlife-500/10 text-white rounded-full font-medium transition-colors inline-block"
-          >
-            {searchTerm ? "Ver Todos os Resultados" : "Ver Todos os Bares e Restaurantes"}
-          </Link>
+            </div>
+          ))}
         </div>
       </div>
-    </section>
+    );
+  }
+
+  if (error) {
+    console.error('Erro ao carregar bares:', error);
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {displayBars.map((bar) => (
+          <BarCard key={bar.id} {...bar} />
+        ))}
+      </div>
+    </div>
   );
 };
 

@@ -15,6 +15,7 @@ interface BarCardProps {
     name: string;
     date: string;
     youtube_url?: string;
+    phone?: string;
   }[];
   tags: string[];
   hours?: string;
@@ -27,11 +28,10 @@ interface BarCardProps {
 // Função para truncar descrições para exibição no card
 const truncateDescription = (description: string): string => {
   const lines = description.split('\n');
-  const truncated = lines.slice(0, 3);
-  if (lines.length > 3) {
-    truncated.push('...');
+  if (lines.length > 2) {
+    return lines.slice(0, 2).join('\n') + '\n...';
   }
-  return truncated.join('\n');
+  return description;
 };
 
 // Função para verificar se o bar está aberto com base no horário atual
@@ -362,10 +362,22 @@ const BarCard: React.FC<BarCardProps> = ({
           
           {events.length > 0 && (
             <div className="border-t border-white/10 pt-4 mt-4">
-              <h4 className="text-base font-medium text-white/90 mb-3 flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-nightlife-400" />
-                Próximos Eventos
-              </h4>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-base font-medium text-white/90 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-nightlife-400" />
+                  Próximos Eventos
+                </h4>
+                {events.some(event => event.phone) && (
+                  <a 
+                    href={`https://wa.me/${events.find(event => event.phone)?.phone?.replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-green-400 hover:text-green-300 text-sm"
+                  >
+                    (Fazer reserva)
+                  </a>
+                )}
+              </div>
               <ul className="space-y-3">
                 {events.slice(0, 2).map((event, index) => (
                   <li key={index} className="flex items-center gap-2.5">
@@ -596,6 +608,17 @@ const BarCard: React.FC<BarCardProps> = ({
                         <Calendar className="w-3 h-3 text-nightlife-400" />
                         {event.date}
                       </p>
+                      {event.phone && (
+                        <a 
+                          href={`https://wa.me/${event.phone.replace(/\D/g, '')}?text=Olá%20gostaria%20de%20fazer%20reserva%20para%20-%20${encodeURIComponent(event.name)}%20(${encodeURIComponent(event.date)})`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-green-400 hover:text-green-300 text-xs flex items-center gap-1 mt-1"
+                        >
+                          <Phone className="w-3 h-3" />
+                          Fazer reserva
+                        </a>
+                      )}
                       {event.youtube_url && (
                         <div 
                           className="mt-2 relative cursor-pointer rounded overflow-hidden group"

@@ -28,6 +28,7 @@ interface Bar {
     name: string; 
     date: string;
     youtube_url?: string;
+    phone?: string;
   }[];
   tags: string[];
   maps_url?: string;
@@ -36,6 +37,22 @@ interface Bar {
   facebook?: string;
   hours?: string;
   user_id?: string;
+  eventName1?: string;
+  eventDate1?: string;
+  eventYoutubeUrl1?: string;
+  eventPhone1?: string;
+  eventName2?: string;
+  eventDate2?: string;
+  eventYoutubeUrl2?: string;
+  eventPhone2?: string;
+  eventName3?: string;
+  eventDate3?: string;
+  eventYoutubeUrl3?: string;
+  eventPhone3?: string;
+  eventName4?: string;
+  eventDate4?: string;
+  eventYoutubeUrl4?: string;
+  eventPhone4?: string;
 }
 
 // Interface para os dados de evento
@@ -200,28 +217,32 @@ const Admin: React.FC = () => {
   });
   
   // Estado para novo bar
-  const [newBar, setNewBar] = useState({
-    id: 0, // para edição
+  const [newBar, setNewBar] = useState<Bar>({
+    id: 0,
     name: '',
     location: '',
-    maps_url: '',
     description: '',
-    rating: 4.5,
+    rating: 0,
     image: '',
-    additional_images: [] as string[],
-    tags: '',
+    additional_images: [],
+    events: [],
+    tags: [],
     eventName1: '',
     eventDate1: '',
     eventYoutubeUrl1: '',
+    eventPhone1: '',
     eventName2: '',
     eventDate2: '',
     eventYoutubeUrl2: '',
+    eventPhone2: '',
     eventName3: '',
     eventDate3: '',
     eventYoutubeUrl3: '',
+    eventPhone3: '',
     eventName4: '',
     eventDate4: '',
     eventYoutubeUrl4: '',
+    eventPhone4: '',
     phone: '',
     instagram: '',
     facebook: '',
@@ -248,7 +269,37 @@ const Admin: React.FC = () => {
 
   // Atualizar campos do novo bar
   const handleBarChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setNewBar({ ...newBar, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    
+    // Se for um campo de evento, atualiza o array de eventos
+    if (name.startsWith('event')) {
+      setNewBar(prev => {
+        const eventIndex = parseInt(name.replace(/\D/g, '')) - 1;
+        const eventField = name.replace(/event\d+/, '').toLowerCase();
+        
+        const updatedEvents = [...(prev.events || [])];
+        if (!updatedEvents[eventIndex]) {
+          updatedEvents[eventIndex] = { name: '', date: '', youtube_url: '', phone: '' };
+        }
+        
+        updatedEvents[eventIndex] = {
+          ...updatedEvents[eventIndex],
+          [eventField]: value
+        };
+        
+        return {
+          ...prev,
+          [name]: value,
+          events: updatedEvents
+        };
+      });
+    } else {
+      // Para outros campos, atualiza normalmente
+      setNewBar(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
   };
 
   // Atualizar campos do novo evento
@@ -447,10 +498,10 @@ const Admin: React.FC = () => {
         additional_images: additionalImages,
         tags: newBar.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0).slice(0, 4),
         events: [
-          { name: newBar.eventName1, date: newBar.eventDate1, youtube_url: newBar.eventYoutubeUrl1 },
-          { name: newBar.eventName2, date: newBar.eventDate2, youtube_url: newBar.eventYoutubeUrl2 },
-          { name: newBar.eventName3, date: newBar.eventDate3, youtube_url: newBar.eventYoutubeUrl3 },
-          { name: newBar.eventName4, date: newBar.eventDate4, youtube_url: newBar.eventYoutubeUrl4 }
+          { name: newBar.eventName1, date: newBar.eventDate1, youtube_url: newBar.eventYoutubeUrl1, phone: newBar.eventPhone1 },
+          { name: newBar.eventName2, date: newBar.eventDate2, youtube_url: newBar.eventYoutubeUrl2, phone: newBar.eventPhone2 },
+          { name: newBar.eventName3, date: newBar.eventDate3, youtube_url: newBar.eventYoutubeUrl3, phone: newBar.eventPhone3 },
+          { name: newBar.eventName4, date: newBar.eventDate4, youtube_url: newBar.eventYoutubeUrl4, phone: newBar.eventPhone4 }
         ].filter(event => event.name && event.date),
         phone: newBar.phone,
         instagram: newBar.instagram,
@@ -626,37 +677,36 @@ const Admin: React.FC = () => {
 
   // Iniciar edição de bar
   const startEditBar = (bar: Bar) => {
-    // Preencher formulário com dados do bar selecionado
     setNewBar({
-      id: bar.id,
-      name: bar.name,
-      location: bar.location,
-      maps_url: bar.maps_url || '',
-      description: bar.description,
-      rating: bar.rating,
-      image: bar.image,
-      additional_images: bar.additional_images || [],
+      ...bar,
       tags: bar.tags.join(', '),
-      eventName1: bar.events[0]?.name || '',
-      eventDate1: bar.events[0]?.date || '',
-      eventYoutubeUrl1: bar.events[0]?.youtube_url || '',
-      eventName2: bar.events[1]?.name || '',
-      eventDate2: bar.events[1]?.date || '',
-      eventYoutubeUrl2: bar.events[1]?.youtube_url || '',
-      eventName3: bar.events[2]?.name || '',
-      eventDate3: bar.events[2]?.date || '',
-      eventYoutubeUrl3: bar.events[2]?.youtube_url || '',
-      eventName4: bar.events[3]?.name || '',
-      eventDate4: bar.events[3]?.date || '',
-      eventYoutubeUrl4: bar.events[3]?.youtube_url || '',
-      phone: bar.phone || '',
-      instagram: bar.instagram || '',
-      facebook: bar.facebook || '',
-      hours: bar.hours || ''
+      eventName1: bar.events?.[0]?.name || '',
+      eventDate1: bar.events?.[0]?.date || '',
+      eventYoutubeUrl1: bar.events?.[0]?.youtube_url || '',
+      eventPhone1: bar.events?.[0]?.phone || '',
+      eventName2: bar.events?.[1]?.name || '',
+      eventDate2: bar.events?.[1]?.date || '',
+      eventYoutubeUrl2: bar.events?.[1]?.youtube_url || '',
+      eventPhone2: bar.events?.[1]?.phone || '',
+      eventName3: bar.events?.[2]?.name || '',
+      eventDate3: bar.events?.[2]?.date || '',
+      eventYoutubeUrl3: bar.events?.[2]?.youtube_url || '',
+      eventPhone3: bar.events?.[2]?.phone || '',
+      eventName4: bar.events?.[3]?.name || '',
+      eventDate4: bar.events?.[3]?.date || '',
+      eventYoutubeUrl4: bar.events?.[3]?.youtube_url || '',
+      eventPhone4: bar.events?.[3]?.phone || '',
     });
     setIsEditMode(true);
     setCurrentBarId(bar.id);
-    window.scrollTo(0, 0);
+    
+    // Adicionar rolagem suave para o card de edição
+    setTimeout(() => {
+      const editCard = document.getElementById('edit-bar-card');
+      if (editCard) {
+        editCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
   };
 
   // Cancelar edição
@@ -886,7 +936,7 @@ const Admin: React.FC = () => {
           )}
           
           {/* Card de adição/edição de bar */}
-            <Card className="bg-nightlife-900 border-white/10">
+            <Card id="edit-bar-card" className="bg-nightlife-900 border-white/10">
               <CardHeader>
                 <CardTitle>{isEditMode ? 'Editar Bar' : 'Adicionar Novo Bar'}</CardTitle>
                 <CardDescription>
@@ -1354,6 +1404,16 @@ const Admin: React.FC = () => {
                           </div>
                         )}
                       </div>
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Número para reservas (opcional)</label>
+                        <Input
+                          type="text"
+                          value={newBar.eventPhone1 || ''}
+                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone1', value: e.target.value } })}
+                          placeholder="Ex: +559 9999-9999"
+                          className="bg-nightlife-950 border-white/20"
+                        />
+                      </div>
                     </div>
                     
                     {/* Evento 2 */}
@@ -1400,6 +1460,16 @@ const Admin: React.FC = () => {
                             <span className="text-xs text-green-400">URL válida ✓</span>
                           </div>
                         )}
+                      </div>
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Número para reservas (opcional)</label>
+                        <Input
+                          type="text"
+                          value={newBar.eventPhone2 || ''}
+                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone2', value: e.target.value } })}
+                          placeholder="Ex: +559 9999-9999"
+                          className="bg-nightlife-950 border-white/20"
+                        />
                       </div>
                     </div>
                     
@@ -1448,6 +1518,16 @@ const Admin: React.FC = () => {
                           </div>
                         )}
                       </div>
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Número para reservas (opcional)</label>
+                        <Input
+                          type="text"
+                          value={newBar.eventPhone3 || ''}
+                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone3', value: e.target.value } })}
+                          placeholder="Ex: +559 9999-9999"
+                          className="bg-nightlife-950 border-white/20"
+                        />
+                      </div>
                     </div>
                     
                     {/* Evento 4 */}
@@ -1495,7 +1575,17 @@ const Admin: React.FC = () => {
                           </div>
                         )}
                       </div>
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Número para reservas (opcional)</label>
+                        <Input
+                          type="text"
+                          value={newBar.eventPhone4 || ''}
+                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone4', value: e.target.value } })}
+                          placeholder="Ex: +559 9999-9999"
+                          className="bg-nightlife-950 border-white/20"
+                        />
                       </div>
+                    </div>
                     </div>
                   </div>
                   

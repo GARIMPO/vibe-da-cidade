@@ -1,70 +1,88 @@
--- Criar tabela site_settings para armazenar configurações do site
-CREATE TABLE IF NOT EXISTS site_settings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  key TEXT NOT NULL UNIQUE,
-  value TEXT,
-  description TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
+-- Create site_settings table to store global configuration
+-- This table will use a key-value pattern for flexibility
+
+CREATE TABLE IF NOT EXISTS "public"."site_settings" (
+    "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+    "key" text NOT NULL,
+    "value" text,
+    "created_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+    PRIMARY KEY ("id"),
+    UNIQUE ("key")
 );
 
--- Adicionar comentário à tabela
-COMMENT ON TABLE site_settings IS 'Tabela para armazenar configurações globais do site';
+-- Add RLS policies for site_settings table
+ALTER TABLE "public"."site_settings" ENABLE ROW LEVEL SECURITY;
 
--- Inserir configuração inicial da imagem de capa se não existir
-INSERT INTO site_settings (key, value, description)
-VALUES (
-  'cover_image',
-  'https://images.unsplash.com/photo-1519214605650-76a613ee3245?q=80&w=2069&auto=format&fit=crop',
-  'URL da imagem de capa exibida na página inicial'
-)
-ON CONFLICT (key) DO NOTHING;
+-- Only superadmins can read and modify site settings
+CREATE POLICY "Allow superadmins to read site_settings" 
+    ON "public"."site_settings" 
+    FOR SELECT 
+    TO authenticated 
+    USING (
+        EXISTS (
+            SELECT 1 FROM "public"."users" 
+            WHERE "public"."users".id = auth.uid() 
+            AND "public"."users".role = 'super_admin'
+        )
+    );
 
--- Configurar políticas de segurança (RLS)
-ALTER TABLE site_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow superadmins to insert site_settings" 
+    ON "public"."site_settings" 
+    FOR INSERT 
+    TO authenticated 
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM "public"."users" 
+            WHERE "public"."users".id = auth.uid() 
+            AND "public"."users".role = 'super_admin'
+        )
+    );
 
--- Política para permitir leitura por qualquer usuário autenticado
-CREATE POLICY "Permitir leitura publica das configuracoes do site"
-  ON site_settings
-  FOR SELECT
-  TO authenticated
-  USING (true);
-
--- Política para permitir atualização apenas por super_admin
-CREATE POLICY "Permitir atualizacao de configuracoes apenas para super_admin"
-  ON site_settings
-  FOR UPDATE
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role = 'super_admin'
+CREATE POLICY "Allow superadmins to update site_settings" 
+    ON "public"."site_settings" 
+    FOR UPDATE 
+    TO authenticated 
+    USING (
+        EXISTS (
+            SELECT 1 FROM "public"."users" 
+            WHERE "public"."users".id = auth.uid() 
+            AND "public"."users".role = 'super_admin'
+        )
     )
-  );
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM "public"."users" 
+            WHERE "public"."users".id = auth.uid() 
+            AND "public"."users".role = 'super_admin'
+        )
+    );
 
--- Política para permitir inserção apenas por super_admin
-CREATE POLICY "Permitir insercao de configuracoes apenas para super_admin"
-  ON site_settings
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role = 'super_admin'
-    )
-  );
+CREATE POLICY "Allow superadmins to delete site_settings" 
+    ON "public"."site_settings" 
+    FOR DELETE 
+    TO authenticated 
+    USING (
+        EXISTS (
+            SELECT 1 FROM "public"."users" 
+            WHERE "public"."users".id = auth.uid() 
+            AND "public"."users".role = 'super_admin'
+        )
+    );
 
--- Política para permitir exclusão apenas por super_admin
-CREATE POLICY "Permitir exclusao de configuracoes apenas para super_admin"
-  ON site_settings
-  FOR DELETE
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role = 'super_admin'
-    )
-  ); 
+-- Also permit anonymous users to read site settings, but not modify
+CREATE POLICY "Allow anon to read site_settings" 
+    ON "public"."site_settings" 
+    FOR SELECT 
+    TO anon 
+    USING (true);
+
+-- Add comment for documentation
+COMMENT ON TABLE "public"."site_settings" IS 'Global site settings with key-value pairs for configuration';
+
+-- Insert default settings
+INSERT INTO "public"."site_settings" ("key", "value")
+VALUES 
+    ('cover_image', 'https://images.unsplash.com/photo-1516450360452-9312f5463357?q=80&w=1974&auto=format&fit=crop&ixlib=rb-4.0.3'),
+    ('maps_link', 'https://www.google.com/maps/search/bares+e+restaurantes')
+ON CONFLICT ("key") DO NOTHING; 
