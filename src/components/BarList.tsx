@@ -1,11 +1,21 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState, useRef } from 'react';
 import BarCard from './BarCard';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useBars } from '@/hooks/use-supabase-data';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Link } from 'react-router-dom';
 
-// Os dados mockados ainda são mantidos como fallback
+// Função para embaralhar um array (algoritmo Fisher-Yates)
+function shuffleArray<T>(array: T[]): T[] {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+}
+
+// Dados mockados como fallback
 const mockBarData = [
   {
     id: 1,
@@ -97,16 +107,6 @@ const mockBarData = [
   }
 ];
 
-// Função para embaralhar um array (algoritmo Fisher-Yates)
-function shuffleArray<T>(array: T[]): T[] {
-  const newArray = [...array];
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-  }
-  return newArray;
-}
-
 // Interface para os dados do bar
 interface Bar {
   id: number;
@@ -125,76 +125,181 @@ interface Bar {
   facebook?: string;
 }
 
-const BarList: React.FC = () => {
+interface BarListProps {
+  searchTerm?: string;
+}
+
+const BarList: React.FC<BarListProps> = ({ searchTerm = '' }) => {
   const isMobile = useIsMobile();
+  const { data: bars = [], isLoading, error } = useBars();
+  const [barToOpen, setBarToOpen] = useState<string | null>(null);
+  const barCardsRef = useRef<Record<string, any>>({});
   
-  // Buscar dados do Supabase
-  const { data: bars, isLoading, error } = useBars();
-
-  // Randomizar mock data quando usado como fallback
-  const randomizedMockData = useMemo(() => shuffleArray(mockBarData), []);
-
-  // Usar dados mockados se houver erro ou enquanto carrega
-  const barData = bars && bars.length > 0 ? bars : randomizedMockData;
-
-  return (
-    <section id="featured" className="py-16 px-4">
-      <div className="container mx-auto">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-            Bares
-          </h2>
-          <p className="text-white/70 max-w-2xl mx-auto">
-            Conheça os bares mais populares da cidade, com as melhores avaliações e eventos imperdíveis para todos os gostos
-          </p>
-        </div>
+  // Usar dados mockados se não houver dados do Supabase
+  const displayBars = useMemo(() => {
+    const barsToDisplay = bars.length > 0 ? bars : mockBarData;
+    
+    // Garantir que cada bar tenha um ID válido em formato string
+    const barsWithValidIds = barsToDisplay.map(bar => {
+      // Garantir que o bar tenha um ID e que ele seja uma string
+      const barId = bar.id ? String(bar.id) : `mock-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      
+      return {
+        ...bar,
+        id: barId // Forçar conversão para string e garantir que é única
+      };
+    });
+    
+    console.log("Bares processados:", barsWithValidIds.map(b => ({ id: b.id, name: b.name, tipo: typeof b.id })));
+    
+    return shuffleArray(barsWithValidIds);
+  }, [bars]);
+  
+  // Check for bar ID in URL parameters
+  useEffect(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const barId = urlParams.get('bar');
+      
+      console.log("URL: Parâmetro 'bar' encontrado:", barId);
+      
+      if (barId !== null) {
+        // Limpar e normalizar o ID
+        const cleanId = String(barId).trim();
+        console.log("URL: ID do bar normalizado:", cleanId);
         
-        {isLoading ? (
-          // Mostrar esqueletos durante o carregamento
-          <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2 lg:grid-cols-3'} gap-6`}>
-            {Array(6).fill(0).map((_, index) => (
-              <div key={index} className="glass-card rounded-xl overflow-hidden">
-                <Skeleton className="h-48 w-full" />
-                <div className="p-5">
-                  <Skeleton className="h-6 w-3/4 mb-2" />
-                  <Skeleton className="h-4 w-1/2 mb-3" />
-                  <Skeleton className="h-4 w-full mb-2" />
-                  <Skeleton className="h-4 w-full mb-2" />
-                  <Skeleton className="h-8 w-full mt-4" />
-                </div>
+        if (cleanId) {
+          setBarToOpen(cleanId);
+        }
+      }
+    } catch (error) {
+      console.error("Erro ao processar parâmetros da URL:", error);
+    }
+  }, []);
+
+  // Open the specified bar modal once data is loaded
+  useEffect(() => {
+    if (!barToOpen || isLoading) return;
+    
+    console.log("Tentando abrir modal para bar ID:", barToOpen);
+    
+    // Aguardar o carregamento dos bares e a criação das refs
+    const tryOpenModal = () => {
+      console.log("Tentativa de abertura de modal. Refs disponíveis:", Object.keys(barCardsRef.current));
+      
+      // Verificar se temos uma ref exata para o ID
+      if (barCardsRef.current[barToOpen]) {
+        console.log("Ref exata encontrada. Abrindo modal para bar ID:", barToOpen);
+        barCardsRef.current[barToOpen].openDetails();
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return true;
+      }
+      
+      // Encontrar o ID correto nos bares disponíveis
+      const allBars = displayBars;
+      console.log("Verificando correspondência entre", barToOpen, "e", allBars.map(b => b.id));
+      
+      // Procurar por uma correspondência de ID exata nos bares disponíveis
+      const exactMatch = allBars.find(b => String(b.id) === barToOpen);
+      if (exactMatch && barCardsRef.current[String(exactMatch.id)]) {
+        console.log("Correspondência exata encontrada nos dados. Abrindo modal para:", exactMatch.id);
+        barCardsRef.current[String(exactMatch.id)].openDetails();
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return true;
+      }
+      
+      // Se não encontrou correspondência exata, tentar correspondências parciais
+      const availableIds = Object.keys(barCardsRef.current);
+      let matchedId = availableIds.find(id => 
+        id === barToOpen || 
+        id.includes(barToOpen) || 
+        barToOpen.includes(id)
+      );
+      
+      if (matchedId) {
+        console.log("Correspondência parcial encontrada. Abrindo modal para:", matchedId);
+        barCardsRef.current[matchedId].openDetails();
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return true;
+      }
+      
+      return false;
+    };
+    
+    // Tentar abrir o modal imediatamente
+    const success = tryOpenModal();
+    
+    // Se não teve sucesso, tentar novamente após um tempo para garantir que os componentes foram renderizados
+    if (!success) {
+      console.log("Primeira tentativa falhou. Agendando nova tentativa...");
+      
+      // Tentar novamente após 1 segundo
+      const timeout1 = setTimeout(() => {
+        if (!tryOpenModal()) {
+          console.log("Segunda tentativa falhou. Agendando tentativa final...");
+          
+          // Tentativa final após mais 2 segundos
+          const timeout2 = setTimeout(() => {
+            if (!tryOpenModal()) {
+              console.warn("Todas as tentativas falharam. Não foi possível abrir o modal para:", barToOpen);
+            }
+          }, 2000);
+          
+          return () => clearTimeout(timeout2);
+        }
+      }, 1000);
+      
+      return () => clearTimeout(timeout1);
+    }
+  }, [barToOpen, isLoading, displayBars]);
+  
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, index) => (
+            <div key={index} className="bg-nightlife-900 rounded-lg overflow-hidden shadow-lg">
+              <Skeleton className="h-48 w-full" />
+              <div className="p-4">
+                <Skeleton className="h-6 w-3/4 mb-2" />
+                <Skeleton className="h-4 w-1/2 mb-4" />
+                <Skeleton className="h-4 w-full mb-2" />
+                <Skeleton className="h-4 w-2/3" />
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2 lg:grid-cols-3'} gap-6`}>
-            {barData.slice(0, 6).map((bar) => (
-              <BarCard 
-                key={bar.id} 
-                name={bar.name}
-                location={bar.location}
-                description={bar.description}
-                rating={bar.rating}
-                image={bar.image}
-                additional_images={bar.additional_images}
-                events={bar.events}
-                tags={bar.tags}
-                hours={bar.hours}
-                maps_url={bar.maps_url}
-                phone={bar.phone}
-                instagram={bar.instagram}
-                facebook={bar.facebook}
-              />
-            ))}
-          </div>
-        )}
-        
-        <div className="mt-12 text-center">
-          <Link to="/bares" className="px-8 py-3 bg-transparent border border-nightlife-500 hover:bg-nightlife-500/10 text-white rounded-full font-medium transition-colors inline-block">
-            Ver Todos os Bares
-          </Link>
+            </div>
+          ))}
         </div>
       </div>
-    </section>
+    );
+  }
+
+  if (error) {
+    console.error('Erro ao carregar bares:', error);
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {displayBars.map((bar) => {
+          // Log para verificar se cada bar tem um ID válido
+          console.log(`Renderizando BarCard - ID: ${bar.id}, Name: ${bar.name}, Type: ${typeof bar.id}`);
+          
+          return (
+            <BarCard 
+              key={bar.id} 
+              {...bar}
+              id={String(bar.id)} // Garantir que o ID seja sempre string 
+              ref={(ref) => {
+                if (ref) {
+                  barCardsRef.current[String(bar.id)] = ref;
+                  console.log(`Ref registrado para bar ${bar.name} com ID ${bar.id}`);
+                }
+              }}
+            />
+          );
+        })}
+      </div>
+    </div>
   );
 };
 

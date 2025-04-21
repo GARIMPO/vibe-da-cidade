@@ -1,5 +1,5 @@
 import React from 'react';
-import { Beer, Instagram, Facebook, MessageSquare } from 'lucide-react';
+import { Beer, Instagram, Phone } from 'lucide-react';
 
 const Footer: React.FC = () => {
   return (
@@ -12,17 +12,30 @@ const Footer: React.FC = () => {
               <span className="text-xl font-bold text-white">Vibe da Cidade</span>
             </div>
             <p className="text-white/60 text-sm">
-              Descubra os melhores bares e eventos da cidade para aproveitar sua vida noturna ao máximo.
+              Descubra os melhores bares e eventos da cidade e aproveite cada movimento.
             </p>
             <div className="flex gap-4">
-              <a href="#" className="text-white/60 hover:text-white transition-colors">
+              <a href="https://www.instagram.com/garimpodeofertas_top?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==" className="text-white/60 hover:text-white transition-colors" target="_blank" rel="noopener noreferrer">
                 <Instagram size={20} />
               </a>
-              <a href="#" className="text-white/60 hover:text-white transition-colors">
-                <Facebook size={20} />
-              </a>
-              <a href="#" className="text-white/60 hover:text-white transition-colors">
-                <MessageSquare size={20} />
+              <a href="https://wa.me/5535998135712" className="text-white/60 hover:text-white transition-colors" target="_blank" rel="noopener noreferrer" title="WhatsApp: +55 35 9813-5712">
+                <svg 
+                  xmlns="http://www.w3.org/2000/svg" 
+                  width="20" 
+                  height="20" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  strokeWidth="2" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round"
+                  className="lucide lucide-whatsapp"
+                >
+                  <path d="M3 21l1.65-3.8a9 9 0 1 1 3.4 2.9L3 21" />
+                  <path d="M9 10a.5.5 0 0 0 1 0V9a.5.5 0 0 0-1 0v1Z" />
+                  <path d="M14 10a.5.5 0 0 0 1 0V9a.5.5 0 0 0-1 0v1Z" />
+                  <path d="M12 17a5 5 0 0 1-5-5" />
+                </svg>
               </a>
             </div>
           </div>
@@ -31,17 +44,15 @@ const Footer: React.FC = () => {
             <h3 className="text-white font-semibold mb-4">Explorar</h3>
             <ul className="space-y-2">
               <li><a href="#featured" className="text-white/60 hover:text-white transition-colors text-sm">Bares</a></li>
-              <li><a href="#events" className="text-white/60 hover:text-white transition-colors text-sm">Eventos da Semana</a></li>
             </ul>
           </div>
           
           <div>
             <h3 className="text-white font-semibold mb-4">Contato</h3>
             <ul className="space-y-2">
-              <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">Sobre Nós</a></li>
-              <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">Anuncie seu Bar</a></li>
-              <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">Política de Privacidade</a></li>
-              <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">Termos de Uso</a></li>
+              <li><a href="https://wa.me/5535998135712" target="_blank" rel="noopener noreferrer" className="text-white/60 hover:text-white transition-colors text-sm">Quero anunciar</a></li>
+              <li><a href="/privacidade" className="text-white/60 hover:text-white transition-colors text-sm">Política de Privacidade</a></li>
+              <li><a href="/termos" className="text-white/60 hover:text-white transition-colors text-sm">Termos de Uso</a></li>
             </ul>
           </div>
         </div>

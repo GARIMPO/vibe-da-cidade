@@ -9,7 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Upload, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Upload, Image as ImageIcon, X } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
+import Navbar from '@/components/Navbar';
+import CoverImageConfig from '@/components/CoverImageConfig';
+import MapsLinkConfig from '@/components/MapsLinkConfig';
 
 // Interface para os dados do bar
 interface Bar {
@@ -24,6 +28,7 @@ interface Bar {
     name: string; 
     date: string;
     youtube_url?: string;
+    phone?: string;
   }[];
   tags: string[];
   maps_url?: string;
@@ -31,18 +36,36 @@ interface Bar {
   instagram?: string;
   facebook?: string;
   hours?: string;
+  user_id?: string;
+  eventName1?: string;
+  eventDate1?: string;
+  eventYoutubeUrl1?: string;
+  eventPhone1?: string;
+  eventName2?: string;
+  eventDate2?: string;
+  eventYoutubeUrl2?: string;
+  eventPhone2?: string;
+  eventName3?: string;
+  eventDate3?: string;
+  eventYoutubeUrl3?: string;
+  eventPhone3?: string;
+  eventName4?: string;
+  eventDate4?: string;
+  eventYoutubeUrl4?: string;
+  eventPhone4?: string;
 }
 
 // Interface para os dados de evento
 interface Event {
-  id: number;
+  id: string;
   title: string;
+  description: string;
   date: string;
   time: string;
   location: string;
-  description: string;
   image: string;
   youtube_url?: string;
+  bar_id?: number | null;
 }
 
 // Função para obter o dia e hora atual em Brasília
@@ -166,6 +189,8 @@ const Admin: React.FC = () => {
   const queryClient = useQueryClient();
   const { data: bars } = useBars();
   const { data: events } = useEvents();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const eventFileInputRef = useRef<HTMLInputElement>(null);
   const additionalFileInputRefs = useRef<Array<HTMLInputElement | null>>([null, null, null]);
@@ -192,28 +217,32 @@ const Admin: React.FC = () => {
   });
   
   // Estado para novo bar
-  const [newBar, setNewBar] = useState({
-    id: 0, // para edição
+  const [newBar, setNewBar] = useState<Bar>({
+    id: 0,
     name: '',
     location: '',
-    maps_url: '',
     description: '',
-    rating: 4.5,
+    rating: 0,
     image: '',
-    additional_images: [] as string[],
-    tags: '',
+    additional_images: [],
+    events: [],
+    tags: [],
     eventName1: '',
     eventDate1: '',
     eventYoutubeUrl1: '',
+    eventPhone1: '',
     eventName2: '',
     eventDate2: '',
     eventYoutubeUrl2: '',
+    eventPhone2: '',
     eventName3: '',
     eventDate3: '',
     eventYoutubeUrl3: '',
+    eventPhone3: '',
     eventName4: '',
     eventDate4: '',
     eventYoutubeUrl4: '',
+    eventPhone4: '',
     phone: '',
     instagram: '',
     facebook: '',
@@ -221,19 +250,56 @@ const Admin: React.FC = () => {
   });
 
   // Estado para novo evento
-  const [newEvent, setNewEvent] = useState({
+  const [newEvent, setNewEvent] = useState<Event>({
+    id: '',
     title: '',
+    description: '',
     date: '',
     time: '',
     location: '',
-    description: '',
     image: '',
-    youtube_url: ''
+    youtube_url: '',
+    bar_id: null
   });
+
+  // Filtrar bares para usuários comuns (apenas seus próprios bares)
+  const filteredBars = isSuperAdmin 
+    ? bars 
+    : bars?.filter(bar => bar.user_id === user?.id);
 
   // Atualizar campos do novo bar
   const handleBarChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setNewBar({ ...newBar, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    
+    // Se for um campo de evento, atualiza o array de eventos
+    if (name.startsWith('event')) {
+      setNewBar(prev => {
+        const eventIndex = parseInt(name.replace(/\D/g, '')) - 1;
+        const eventField = name.replace(/event\d+/, '').toLowerCase();
+        
+        const updatedEvents = [...(prev.events || [])];
+        if (!updatedEvents[eventIndex]) {
+          updatedEvents[eventIndex] = { name: '', date: '', youtube_url: '', phone: '' };
+        }
+        
+        updatedEvents[eventIndex] = {
+          ...updatedEvents[eventIndex],
+          [eventField]: value
+        };
+        
+        return {
+          ...prev,
+          [name]: value,
+          events: updatedEvents
+        };
+      });
+    } else {
+      // Para outros campos, atualiza normalmente
+      setNewBar(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
   };
 
   // Atualizar campos do novo evento
@@ -351,6 +417,49 @@ const Admin: React.FC = () => {
     e.preventDefault();
     
     try {
+      if (!newBar.name.trim() || !newBar.description.trim() || !newBar.location.trim()) {
+        toast({
+          title: "Campos obrigatórios",
+          description: "Por favor, preencha todos os campos obrigatórios.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Verificar limite de tags (máximo 4)
+      const tagsArray = newBar.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+      if (tagsArray.length > 4) {
+        toast({
+          title: "Limite de tags",
+          description: "Você pode adicionar no máximo 4 tags para um bar.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Verificar limite de bar para usuários comuns (não super_admin)
+      if (!isEditMode && !isSuperAdmin) {
+        // Verificar se o usuário já tem um bar cadastrado
+        const { data: userBars, error: userBarsError } = await supabase
+          .from('bars')
+          .select('id')
+          .eq('user_id', user?.id);
+          
+        if (userBarsError) {
+          console.error("Erro ao verificar bares do usuário:", userBarsError);
+          throw userBarsError;
+        }
+        
+        if (userBars && userBars.length >= 1) {
+          toast({
+            title: "Limite de bares",
+            description: "Usuários comuns podem adicionar apenas um bar. Edite o bar existente ou contate um administrador.",
+            variant: "destructive"
+          });
+          return;
+        }
+      }
+      
       let imageUrl = newBar.image;
       
       // Se houver um arquivo selecionado, fazer upload
@@ -379,7 +488,7 @@ const Admin: React.FC = () => {
       }
       
       // Preparar os dados para salvar
-      const barData = {
+      const barData: any = {
         name: newBar.name,
         location: newBar.location,
         maps_url: newBar.maps_url,
@@ -387,18 +496,23 @@ const Admin: React.FC = () => {
         rating: parseFloat(newBar.rating.toString()),
         image: imageUrl || 'https://images.unsplash.com/photo-1514933651103-005eec06c04b',
         additional_images: additionalImages,
-        tags: newBar.tags.split(',').map(tag => tag.trim()),
+        tags: newBar.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0).slice(0, 4),
         events: [
-          { name: newBar.eventName1, date: newBar.eventDate1, youtube_url: newBar.eventYoutubeUrl1 },
-          { name: newBar.eventName2, date: newBar.eventDate2, youtube_url: newBar.eventYoutubeUrl2 },
-          { name: newBar.eventName3, date: newBar.eventDate3, youtube_url: newBar.eventYoutubeUrl3 },
-          { name: newBar.eventName4, date: newBar.eventDate4, youtube_url: newBar.eventYoutubeUrl4 }
+          { name: newBar.eventName1, date: newBar.eventDate1, youtube_url: newBar.eventYoutubeUrl1, phone: newBar.eventPhone1 },
+          { name: newBar.eventName2, date: newBar.eventDate2, youtube_url: newBar.eventYoutubeUrl2, phone: newBar.eventPhone2 },
+          { name: newBar.eventName3, date: newBar.eventDate3, youtube_url: newBar.eventYoutubeUrl3, phone: newBar.eventPhone3 },
+          { name: newBar.eventName4, date: newBar.eventDate4, youtube_url: newBar.eventYoutubeUrl4, phone: newBar.eventPhone4 }
         ].filter(event => event.name && event.date),
         phone: newBar.phone,
         instagram: newBar.instagram,
         facebook: newBar.facebook,
-        hours: newBar.hours
+        hours: formatHoursForSave(hoursData)
       };
+      
+      // Adicionar user_id ao criar novo bar (não ao editar)
+      if (!isEditMode && user) {
+        barData.user_id = user.id;
+      }
       
       console.log('Enviando dados do bar:', barData);
       
@@ -473,14 +587,21 @@ const Admin: React.FC = () => {
       
       // Atualizar a lista de bares
       queryClient.invalidateQueries({ queryKey: ['bars'] });
+      queryClient.refetchQueries({ queryKey: ['bars'] });
       setIsEditMode(false);
       setCurrentBarId(null);
+      
+      // Aguardar um pouco e fazer uma segunda tentativa de atualizar a lista
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['bars'] });
+        queryClient.refetchQueries({ queryKey: ['bars'] });
+      }, 1000);
       
     } catch (error) {
       console.error("Erro ao salvar bar:", error);
       toast({
         title: "Erro",
-        description: `Não foi possível ${isEditMode ? 'atualizar' : 'adicionar'} o bar. Tente novamente.`,
+        description: "Ocorreu um erro ao salvar o bar. Por favor, tente novamente.",
         variant: "destructive"
       });
     }
@@ -521,13 +642,15 @@ const Admin: React.FC = () => {
       
       // Limpar o formulário e atualizar a lista
       setNewEvent({
+        id: '',
         title: '',
+        description: '',
         date: '',
         time: '',
         location: '',
-        description: '',
         image: '',
-        youtube_url: ''
+        youtube_url: '',
+        bar_id: null
       });
       
       // Limpar previews de imagem
@@ -554,37 +677,36 @@ const Admin: React.FC = () => {
 
   // Iniciar edição de bar
   const startEditBar = (bar: Bar) => {
-    // Preencher formulário com dados do bar selecionado
     setNewBar({
-      id: bar.id,
-      name: bar.name,
-      location: bar.location,
-      maps_url: bar.maps_url || '',
-      description: bar.description,
-      rating: bar.rating,
-      image: bar.image,
-      additional_images: bar.additional_images || [],
+      ...bar,
       tags: bar.tags.join(', '),
-      eventName1: bar.events[0]?.name || '',
-      eventDate1: bar.events[0]?.date || '',
-      eventYoutubeUrl1: bar.events[0]?.youtube_url || '',
-      eventName2: bar.events[1]?.name || '',
-      eventDate2: bar.events[1]?.date || '',
-      eventYoutubeUrl2: bar.events[1]?.youtube_url || '',
-      eventName3: bar.events[2]?.name || '',
-      eventDate3: bar.events[2]?.date || '',
-      eventYoutubeUrl3: bar.events[2]?.youtube_url || '',
-      eventName4: bar.events[3]?.name || '',
-      eventDate4: bar.events[3]?.date || '',
-      eventYoutubeUrl4: bar.events[3]?.youtube_url || '',
-      phone: bar.phone || '',
-      instagram: bar.instagram || '',
-      facebook: bar.facebook || '',
-      hours: bar.hours || ''
+      eventName1: bar.events?.[0]?.name || '',
+      eventDate1: bar.events?.[0]?.date || '',
+      eventYoutubeUrl1: bar.events?.[0]?.youtube_url || '',
+      eventPhone1: bar.events?.[0]?.phone || '',
+      eventName2: bar.events?.[1]?.name || '',
+      eventDate2: bar.events?.[1]?.date || '',
+      eventYoutubeUrl2: bar.events?.[1]?.youtube_url || '',
+      eventPhone2: bar.events?.[1]?.phone || '',
+      eventName3: bar.events?.[2]?.name || '',
+      eventDate3: bar.events?.[2]?.date || '',
+      eventYoutubeUrl3: bar.events?.[2]?.youtube_url || '',
+      eventPhone3: bar.events?.[2]?.phone || '',
+      eventName4: bar.events?.[3]?.name || '',
+      eventDate4: bar.events?.[3]?.date || '',
+      eventYoutubeUrl4: bar.events?.[3]?.youtube_url || '',
+      eventPhone4: bar.events?.[3]?.phone || '',
     });
     setIsEditMode(true);
     setCurrentBarId(bar.id);
-    window.scrollTo(0, 0);
+    
+    // Adicionar rolagem suave para o card de edição
+    setTimeout(() => {
+      const editCard = document.getElementById('edit-bar-card');
+      if (editCard) {
+        editCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
   };
 
   // Cancelar edição
@@ -666,28 +788,158 @@ const Admin: React.FC = () => {
     }
   }, [newBar.hours]);
 
-  return (
-    <div className="min-h-screen bg-nightlife-950 text-white py-10 px-4">
-      <div className="container mx-auto max-w-4xl">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold text-center">Painel Administrativo</h1>
-          <a href="/" className="inline-flex items-center gap-2 bg-nightlife-800 hover:bg-nightlife-700 text-white px-4 py-2 rounded-md transition-colors">
-            <ArrowLeft className="h-4 w-4" />
-            Voltar
-          </a>
-        </div>
+  // Iniciar edição de evento
+  const startEditEvent = (event: Event) => {
+    setNewEvent({
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      date: event.date,
+      time: event.time,
+      location: event.location,
+      image: event.image,
+      youtube_url: event.youtube_url || '',
+      bar_id: event.bar_id
+    });
+    setEventImagePreview(event.image);
+    setIsEditMode(true);
+    window.scrollTo(0, 0);
+  };
+
+  // Cancelar edição de evento
+  const cancelEditEvent = () => {
+    setNewEvent({
+      id: '',
+      title: '',
+      description: '',
+      date: '',
+      time: '',
+      location: '',
+      image: '',
+      youtube_url: '',
+      bar_id: null
+    });
+    setEventImagePreview(null);
+    if (eventFileInputRef.current) eventFileInputRef.current.value = '';
+    setIsEditMode(false);
+  };
+
+  // Excluir evento
+  const deleteEvent = async (eventId: string) => {
+    try {
+      const { error } = await supabase
+        .from('events')
+        .delete()
+        .eq('id', eventId);
         
-        <Tabs defaultValue="bars" onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2 mb-8">
-            <TabsTrigger value="bars">Bares</TabsTrigger>
-            <TabsTrigger value="events">Eventos</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="bars">
+      if (error) throw error;
+      
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      
+      toast({
+        title: "Evento excluído",
+        description: "O evento foi excluído com sucesso."
+      });
+    } catch (error) {
+      console.error("Erro ao excluir evento:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível excluir o evento. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Função para remover uma imagem adicional
+  const removeAdditionalImage = (index: number) => {
+    // Criar uma cópia da lista de imagens adicionais
+    const updatedImages = [...newBar.additional_images];
+    // Remover a imagem do índice especificado
+    updatedImages.splice(index, 1);
+    // Atualizar o estado
+    setNewBar({
+      ...newBar,
+      additional_images: updatedImages
+    });
+    // Limpar o preview
+    setAdditionalImagePreviews(prev => {
+      const newPreviews = [...prev];
+      newPreviews[index] = null;
+      return newPreviews;
+    });
+    // Limpar o input de arquivo
+    if (additionalFileInputRefs.current[index]) {
+      additionalFileInputRefs.current[index]!.value = '';
+    }
+    
+    toast({
+      title: "Imagem removida",
+      description: `A imagem ${index + 1} foi removida com sucesso.`
+    });
+  };
+
+  // Função para remover a imagem principal
+  const removeMainImage = () => {
+    setNewBar({
+      ...newBar,
+      image: ''
+    });
+    setImagePreview(null);
+    
+    // Limpar o input de arquivo
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    
+    toast({
+      title: "Imagem removida",
+      description: "A imagem principal foi removida com sucesso."
+    });
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col bg-black text-white">
+      <Navbar />
+      
+      <div className="container mx-auto max-w-7xl px-4 py-8">
+        <h1 className="text-3xl font-bold mb-8">Painel de Administração</h1>
+        
+        <div className="space-y-6">
+          {/* Card de configuração da página inicial (apenas super admin) */}
+          {isSuperAdmin && (
             <Card className="bg-nightlife-900 border-white/10">
               <CardHeader>
+                <CardTitle>Configuração da Página Inicial</CardTitle>
+                <CardDescription>
+                  Altere a imagem de capa exibida na página inicial
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CoverImageConfig />
+              </CardContent>
+            </Card>
+          )}
+          
+          {/* Card de configuração do link do Google Maps (apenas super admin) */}
+          {isSuperAdmin && (
+            <Card className="bg-nightlife-900 border-white/10">
+              <CardHeader>
+                <CardTitle>Link Maps personalizado Google</CardTitle>
+                <CardDescription>
+                  Configure o link personalizado do Google Maps que será exibido na página de bares
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MapsLinkConfig />
+              </CardContent>
+            </Card>
+          )}
+          
+          {/* Card de adição/edição de bar */}
+            <Card id="edit-bar-card" className="bg-nightlife-900 border-white/10">
+              <CardHeader>
                 <CardTitle>{isEditMode ? 'Editar Bar' : 'Adicionar Novo Bar'}</CardTitle>
-                <CardDescription className="text-white/60">
+                <CardDescription>
                   {isEditMode 
                     ? 'Atualize as informações do bar selecionado.' 
                     : 'Preencha os campos abaixo para adicionar um novo bar ao site.'}
@@ -704,7 +956,7 @@ const Admin: React.FC = () => {
                     <li>Os vídeos serão exibidos como miniaturas clicáveis que abrirão em um player</li>
                   </ul>
                 </div>
-                <form onSubmit={addOrUpdateBar} className="space-y-4">
+              <form onSubmit={addOrUpdateBar} className="space-y-4 max-w-full">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm text-white/70 mb-1 block">Nome do Bar</label>
@@ -781,19 +1033,15 @@ const Admin: React.FC = () => {
                   <div>
                     <label className="text-sm text-white/70 mb-1 block">Horário de Funcionamento</label>
                     <div className="border border-white/10 rounded-lg p-4 bg-nightlife-950/50 space-y-4">
-                      <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                         <h4 className="text-sm font-medium">Dias e Horários</h4>
-                        <div className="bg-nightlife-800 px-2 py-1 rounded text-xs text-white/80 flex items-center gap-1">
-                          <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                          <span>Horário atual em Brasília: {getCurrentDayHour()}</span>
-                        </div>
                       </div>
                       
                       {/* Segunda */}
                       <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className={`text-sm ${getCurrentDayHour().includes('Segunda') ? 'text-blue-400 font-medium' : ''}`}>Segunda-feira</label>
-                          <div className="flex gap-2 items-center">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                        <label className={`text-sm ${getCurrentDayHour().includes('Segunda') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Segunda-feira</label>
+                        <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
                               placeholder="Abertura"
@@ -815,9 +1063,9 @@ const Admin: React.FC = () => {
                       
                       {/* Terça */}
                       <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className={`text-sm ${getCurrentDayHour().includes('Terça') ? 'text-blue-400 font-medium' : ''}`}>Terça-feira</label>
-                          <div className="flex gap-2 items-center">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                        <label className={`text-sm ${getCurrentDayHour().includes('Terça') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Terça-feira</label>
+                        <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
                               placeholder="Abertura"
@@ -839,9 +1087,9 @@ const Admin: React.FC = () => {
                       
                       {/* Quarta */}
                       <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className={`text-sm ${getCurrentDayHour().includes('Quarta') ? 'text-blue-400 font-medium' : ''}`}>Quarta-feira</label>
-                          <div className="flex gap-2 items-center">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                        <label className={`text-sm ${getCurrentDayHour().includes('Quarta') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Quarta-feira</label>
+                        <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
                               placeholder="Abertura"
@@ -863,9 +1111,9 @@ const Admin: React.FC = () => {
                       
                       {/* Quinta */}
                       <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className={`text-sm ${getCurrentDayHour().includes('Quinta') ? 'text-blue-400 font-medium' : ''}`}>Quinta-feira</label>
-                          <div className="flex gap-2 items-center">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                        <label className={`text-sm ${getCurrentDayHour().includes('Quinta') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Quinta-feira</label>
+                        <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
                               placeholder="Abertura"
@@ -887,9 +1135,9 @@ const Admin: React.FC = () => {
                       
                       {/* Sexta */}
                       <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className={`text-sm ${getCurrentDayHour().includes('Sexta') ? 'text-blue-400 font-medium' : ''}`}>Sexta-feira</label>
-                          <div className="flex gap-2 items-center">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                        <label className={`text-sm ${getCurrentDayHour().includes('Sexta') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Sexta-feira</label>
+                        <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
                               placeholder="Abertura"
@@ -911,9 +1159,9 @@ const Admin: React.FC = () => {
                       
                       {/* Sábado */}
                       <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className={`text-sm ${getCurrentDayHour().includes('Sábado') ? 'text-blue-400 font-medium' : ''}`}>Sábado</label>
-                          <div className="flex gap-2 items-center">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                        <label className={`text-sm ${getCurrentDayHour().includes('Sábado') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Sábado</label>
+                        <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
                               placeholder="Abertura"
@@ -935,9 +1183,9 @@ const Admin: React.FC = () => {
                       
                       {/* Domingo */}
                       <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className={`text-sm ${getCurrentDayHour().includes('Domingo') ? 'text-blue-400 font-medium' : ''}`}>Domingo</label>
-                          <div className="flex gap-2 items-center">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                        <label className={`text-sm ${getCurrentDayHour().includes('Domingo') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Domingo</label>
+                        <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
                               placeholder="Abertura"
@@ -980,7 +1228,7 @@ const Admin: React.FC = () => {
                     </p>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm text-white/70 mb-1 block">Imagem Principal</label>
                       <div className="flex flex-col gap-3">
@@ -1008,12 +1256,20 @@ const Admin: React.FC = () => {
                         
                         {/* Preview da imagem */}
                         {(imagePreview || newBar.image) && (
-                          <div className="mt-2 relative w-full h-40 bg-nightlife-800 rounded-md overflow-hidden">
+                        <div className="mt-2 relative w-full h-40 sm:h-48 bg-nightlife-800 rounded-md overflow-hidden group">
                             <img 
                               src={imagePreview || newBar.image} 
                               alt="Preview" 
                               className="w-full h-full object-cover"
                             />
+                          <button
+                            type="button"
+                            onClick={removeMainImage}
+                            className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Remover imagem"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
                           </div>
                         )}
                       </div>
@@ -1036,7 +1292,7 @@ const Admin: React.FC = () => {
                   
                   <div>
                     <label className="text-sm text-white/70 mb-1 block">Imagens Adicionais (até 3)</label>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       {Array.from({ length: 3 }).map((_, index) => (
                         <div key={index} className="flex flex-col gap-2">
                           <Button 
@@ -1059,12 +1315,20 @@ const Admin: React.FC = () => {
                           
                           {/* Preview da imagem adicional */}
                           {(additionalImagePreviews[index] || (newBar.additional_images && newBar.additional_images[index])) && (
-                            <div className="relative w-full h-24 bg-nightlife-800 rounded-md overflow-hidden">
+                          <div className="relative w-full h-32 bg-nightlife-800 rounded-md overflow-hidden group">
                               <img 
                                 src={additionalImagePreviews[index] || newBar.additional_images[index]} 
                                 alt={`Preview ${index + 1}`} 
                                 className="w-full h-full object-cover"
                               />
+                            <button
+                              type="button"
+                              onClick={() => removeAdditionalImage(index)}
+                              className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Remover imagem"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
                             </div>
                           )}
                         </div>
@@ -1073,41 +1337,58 @@ const Admin: React.FC = () => {
                     <p className="text-xs text-white/50 mt-1">Adicione até 3 imagens que serão exibidas na visualização detalhada</p>
                   </div>
                   
+                <div className="grid grid-cols-1 gap-4">
                   <div>
                     <label className="text-sm text-white/70 mb-1 block">Tags (separadas por vírgula)</label>
                     <Input
                       name="tags"
-                      placeholder="Música ao Vivo, Cerveja Artesanal, Petiscos"
+                      placeholder="rock, happy hour, samba..."
                       value={newBar.tags}
                       onChange={handleBarChange}
                       required
                       className="bg-nightlife-950 border-white/20"
                     />
+                    <p className="text-xs text-white/50 mt-1">
+                      Máximo de 4 tags que ajudam na busca e filtragem dos bares
+                    </p>
+                  </div>
                   </div>
                   
+                {/* Eventos */}
                   <div className="border border-white/10 p-4 rounded-md">
-                    <h3 className="text-sm font-medium mb-3">Eventos do Bar</h3>
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <h3 className="text-sm font-medium mb-4">Eventos</h3>
+                  
+                  <div className="space-y-6">
+                    {/* Evento 1 */}
+                    <div className="space-y-3 pb-4 border-b border-white/10">
+                      <h4 className="text-sm text-white/70">Evento 1</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-white/70 mb-1 block">Nome do Evento</label>
                         <Input
                           name="eventName1"
-                          placeholder="Nome do evento 1"
+                            placeholder="Ex: Noite de Jazz"
                           value={newBar.eventName1}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
                         />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/70 mb-1 block">Data</label>
                         <Input
                           name="eventDate1"
-                          placeholder="Data e hora (ex: Sexta, 20:00)"
+                            placeholder="Ex: Toda quinta, 20h"
                           value={newBar.eventDate1}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
                         />
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      </div>
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Link do YouTube (opcional)</label>
                         <Input
                           name="eventYoutubeUrl1"
-                          placeholder="URL do vídeo do evento 1"
+                          placeholder="https://www.youtube.com/watch?v=..."
                           value={newBar.eventYoutubeUrl1}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
@@ -1123,26 +1404,48 @@ const Admin: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Número para reservas (opcional)</label>
+                        <Input
+                          type="text"
+                          value={newBar.eventPhone1 || ''}
+                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone1', value: e.target.value } })}
+                          placeholder="Ex: +559 9999-9999"
+                          className="bg-nightlife-950 border-white/20"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Evento 2 */}
+                    <div className="space-y-3 pb-4 border-b border-white/10">
+                      <h4 className="text-sm text-white/70">Evento 2</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-white/70 mb-1 block">Nome do Evento</label>
                         <Input
                           name="eventName2"
-                          placeholder="Nome do evento 2"
+                            placeholder="Ex: Tributo Rock"
                           value={newBar.eventName2}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
                         />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/70 mb-1 block">Data</label>
                         <Input
                           name="eventDate2"
-                          placeholder="Data e hora (ex: Sábado, 21:00)"
+                            placeholder="Ex: Sextas, 21h"
                           value={newBar.eventDate2}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
                         />
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      </div>
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Link do YouTube (opcional)</label>
                         <Input
                           name="eventYoutubeUrl2"
-                          placeholder="URL do vídeo do evento 2"
+                          placeholder="https://www.youtube.com/watch?v=..."
                           value={newBar.eventYoutubeUrl2}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
@@ -1158,26 +1461,48 @@ const Admin: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Número para reservas (opcional)</label>
+                        <Input
+                          type="text"
+                          value={newBar.eventPhone2 || ''}
+                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone2', value: e.target.value } })}
+                          placeholder="Ex: +559 9999-9999"
+                          className="bg-nightlife-950 border-white/20"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Evento 3 */}
+                    <div className="space-y-3 pb-4 border-b border-white/10">
+                      <h4 className="text-sm text-white/70">Evento 3</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-white/70 mb-1 block">Nome do Evento</label>
                         <Input
                           name="eventName3"
-                          placeholder="Nome do evento 3"
+                            placeholder="Ex: Samba ao Vivo"
                           value={newBar.eventName3}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
                         />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/70 mb-1 block">Data</label>
                         <Input
                           name="eventDate3"
-                          placeholder="Data e hora (ex: Domingo, 18:00)"
+                            placeholder="Ex: Sábados, 20h"
                           value={newBar.eventDate3}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
                         />
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      </div>
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Link do YouTube (opcional)</label>
                         <Input
                           name="eventYoutubeUrl3"
-                          placeholder="URL do vídeo do evento 3"
+                          placeholder="https://www.youtube.com/watch?v=..."
                           value={newBar.eventYoutubeUrl3}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
@@ -1193,26 +1518,48 @@ const Admin: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Número para reservas (opcional)</label>
+                        <Input
+                          type="text"
+                          value={newBar.eventPhone3 || ''}
+                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone3', value: e.target.value } })}
+                          placeholder="Ex: +559 9999-9999"
+                          className="bg-nightlife-950 border-white/20"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Evento 4 */}
+                    <div className="space-y-3">
+                      <h4 className="text-sm text-white/70">Evento 4</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-white/70 mb-1 block">Nome do Evento</label>
                         <Input
                           name="eventName4"
-                          placeholder="Nome do evento 4"
+                            placeholder="Ex: Karaokê"
                           value={newBar.eventName4}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
                         />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/70 mb-1 block">Data</label>
                         <Input
                           name="eventDate4"
-                          placeholder="Data e hora (ex: Domingo, 20:00)"
+                            placeholder="Ex: Domingos, 19h"
                           value={newBar.eventDate4}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
                         />
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      </div>
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Link do YouTube (opcional)</label>
                         <Input
                           name="eventYoutubeUrl4"
-                          placeholder="URL do vídeo do evento 4"
+                          placeholder="https://www.youtube.com/watch?v=..."
                           value={newBar.eventYoutubeUrl4}
                           onChange={handleBarChange}
                           className="bg-nightlife-950 border-white/20"
@@ -1228,6 +1575,17 @@ const Admin: React.FC = () => {
                           </div>
                         )}
                       </div>
+                      <div>
+                        <label className="text-xs text-white/70 mb-1 block">Número para reservas (opcional)</label>
+                        <Input
+                          type="text"
+                          value={newBar.eventPhone4 || ''}
+                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone4', value: e.target.value } })}
+                          placeholder="Ex: +559 9999-9999"
+                          className="bg-nightlife-950 border-white/20"
+                        />
+                      </div>
+                    </div>
                     </div>
                   </div>
                   
@@ -1255,9 +1613,13 @@ const Admin: React.FC = () => {
             </Card>
             
             <div className="mt-8">
-              <h2 className="text-xl font-semibold mb-4">Bares Cadastrados ({bars?.length || 0})</h2>
+              <h2 className="text-xl font-semibold mb-4">
+                {isSuperAdmin 
+                  ? `Bares Cadastrados (${filteredBars?.length || 0})` 
+                  : "Meu Bar"}
+              </h2>
               <div className="space-y-4">
-                {bars?.map((bar) => (
+                {filteredBars?.map((bar) => (
                   <Card key={bar.id} className="bg-nightlife-900 border-white/10">
                     <CardContent className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                       <div className="flex items-center gap-3">
@@ -1331,205 +1693,27 @@ const Admin: React.FC = () => {
                     </CardContent>
                   </Card>
                 ))}
-              </div>
-            </div>
-          </TabsContent>
-          
-          <TabsContent value="events">
-            <Card className="bg-nightlife-900 border-white/10">
-              <CardHeader>
-                <CardTitle>Adicionar Novo Evento</CardTitle>
-                <CardDescription className="text-white/60">
-                  Preencha os campos abaixo para adicionar um novo evento.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="bg-nightlife-800/50 p-3 rounded-md mb-4 text-white/70 text-sm">
-                  <strong className="text-white">Informações sobre vídeos:</strong>
-                  <ul className="list-disc ml-5 mt-1 space-y-1">
-                    <li>Cole a URL completa do vídeo do YouTube (ex: https://www.youtube.com/watch?v=XXXX)</li>
-                    <li>O vídeo será exibido como uma miniatura clicável na página de detalhes</li>
-                    <li>Quando clicado, o vídeo será reproduzido em uma janela modal</li>
-                  </ul>
-                </div>
-                <form onSubmit={addEvent} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm text-white/70 mb-1 block">Título do Evento</label>
-                      <Input
-                        name="title"
-                        placeholder="Título do evento"
-                        value={newEvent.title}
-                        onChange={handleEventChange}
-                        required
-                        className="bg-nightlife-950 border-white/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-white/70 mb-1 block">Local</label>
-                      <Input
-                        name="location"
-                        placeholder="Local do evento"
-                        value={newEvent.location}
-                        onChange={handleEventChange}
-                        required
-                        className="bg-nightlife-950 border-white/20"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm text-white/70 mb-1 block">Data</label>
-                      <Input
-                        name="date"
-                        placeholder="Ex: 27 Abril, 2025"
-                        value={newEvent.date}
-                        onChange={handleEventChange}
-                        required
-                        className="bg-nightlife-950 border-white/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-white/70 mb-1 block">Horário</label>
-                      <Input
-                        name="time"
-                        placeholder="Ex: 19:00 - 23:00"
-                        value={newEvent.time}
-                        onChange={handleEventChange}
-                        required
-                        className="bg-nightlife-950 border-white/20"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="text-sm text-white/70 mb-1 block">Descrição</label>
-                    <Textarea
-                      name="description"
-                      placeholder="Descrição do evento"
-                      value={newEvent.description}
-                      onChange={handleEventChange}
-                      required
-                      className="bg-nightlife-950 border-white/20 h-[72px] resize-none"
-                    />
-                    <p className="text-xs text-white/50 mt-1">
-                      A descrição será limitada a 3 linhas no card principal. Texto completo visível apenas na visualização detalhada.
+                
+                {/* Mostrar mensagem se não houver bares */}
+                {filteredBars?.length === 0 && (
+                  <div className="text-center p-8 bg-nightlife-900 border border-white/10 rounded-md">
+                    <h3 className="text-lg font-medium mb-2">
+                      {isSuperAdmin 
+                        ? "Nenhum bar cadastrado" 
+                        : "Você ainda não tem um bar cadastrado"}
+                    </h3>
+                    <p className="text-sm text-white/60">
+                      {isSuperAdmin 
+                        ? "Adicione um novo bar utilizando o formulário acima" 
+                        : "Utilize o formulário acima para cadastrar seu bar"}
                     </p>
                   </div>
-                  
-                  <div>
-                    <label className="text-sm text-white/70 mb-1 block">Imagem</label>
-                    <div className="flex flex-col gap-3">
-                      <div>
-                        {/* Botão para upload de imagem */}
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          className="border-white/20 w-full"
-                          onClick={handleEventUploadClick}
-                        >
-                          <Upload className="h-4 w-4 mr-2" />
-                          Selecionar Imagem
-                        </Button>
-                      </div>
-                      
-                      {/* Input oculto para seleção de arquivo */}
-                      <input
-                        type="file"
-                        ref={eventFileInputRef}
-                        className="hidden"
-                        accept="image/*"
-                        onChange={(e) => handleFileChange(e, true)}
-                      />
-                      
-                      {/* Preview da imagem */}
-                      {(eventImagePreview || newEvent.image) && (
-                        <div className="mt-2 relative w-full h-40 bg-nightlife-800 rounded-md overflow-hidden">
-                          <img 
-                            src={eventImagePreview || newEvent.image} 
-                            alt="Preview" 
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="text-sm text-white/70 mb-1 block">URL do Vídeo</label>
-                    <Input
-                      name="youtube_url"
-                      placeholder="URL do vídeo do evento"
-                      value={newEvent.youtube_url}
-                      onChange={handleEventChange}
-                      className="bg-nightlife-950 border-white/20"
-                    />
-                    {isValidYoutubeUrl(newEvent.youtube_url) && (
-                      <div className="flex items-center mt-2">
-                        <img 
-                          src={`https://img.youtube.com/vi/${getYoutubeVideoId(newEvent.youtube_url)}/default.jpg`} 
-                          alt="Miniatura do vídeo"
-                          className="w-20 h-16 object-cover rounded mr-2"
-                        />
-                        <div>
-                          <span className="text-xs text-green-400 block">URL válida ✓</span>
-                          <span className="text-xs text-white/60 block">O vídeo será exibido na página de detalhes</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <Button 
-                    type="submit" 
-                    className="w-full bg-nightlife-600 hover:bg-nightlife-700"
-                    disabled={isUploading}
-                  >
-                    {isUploading ? 'Enviando...' : 'Adicionar Evento'}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-            
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold mb-4">Eventos Cadastrados ({events?.length || 0})</h2>
-              <div className="space-y-4">
-                {events?.map((event) => (
-                  <Card key={event.id} className="bg-nightlife-900 border-white/10">
-                    <CardContent className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-md overflow-hidden flex-shrink-0">
-                          <img src={event.image} alt={event.title} className="w-full h-full object-cover" />
-                        </div>
-                        <div>
-                          <h3 className="font-medium">{event.title}</h3>
-                          <p className="text-sm text-white/60">{event.date} • {event.time}</p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="border-white/20"
-                        >
-                          Editar
-                        </Button>
-                        <Button 
-                          variant="destructive" 
-                          size="sm"
-                        >
-                          Excluir
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                )}
               </div>
             </div>
-          </TabsContent>
-        </Tabs>
+        </div>
       </div>
-
+      
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent className="bg-nightlife-900 border-white/10 text-white">
           <AlertDialogHeader>

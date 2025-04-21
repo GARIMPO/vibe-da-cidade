@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Beer, MapPin, Music, Calendar, Star, X, Phone, Clock, Globe, Instagram, Facebook, ArrowLeft, Tag, Youtube } from 'lucide-react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { Beer, MapPin, Music, Calendar, Star, X, Phone, Clock, Globe, Instagram, Facebook, ArrowLeft, Tag, Youtube, Share2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 
 interface BarCardProps {
   name: string;
@@ -15,6 +16,7 @@ interface BarCardProps {
     name: string;
     date: string;
     youtube_url?: string;
+    phone?: string;
   }[];
   tags: string[];
   hours?: string;
@@ -22,16 +24,16 @@ interface BarCardProps {
   phone?: string;
   instagram?: string;
   facebook?: string;
+  id: string;
 }
 
 // Função para truncar descrições para exibição no card
 const truncateDescription = (description: string): string => {
   const lines = description.split('\n');
-  const truncated = lines.slice(0, 3);
-  if (lines.length > 3) {
-    truncated.push('...');
+  if (lines.length > 2) {
+    return lines.slice(0, 2).join('\n') + '\n...';
   }
-  return truncated.join('\n');
+  return description;
 };
 
 // Função para verificar se o bar está aberto com base no horário atual
@@ -50,19 +52,13 @@ const isBarOpen = (hoursText?: string): boolean => {
   const localMinutes = now.getMinutes();
   console.log(`Horário local: ${localHours}:${localMinutes}, dia da semana: ${localDayOfWeek}`);
   
-  // Ajustar para o fuso horário de Brasília (UTC-3)
-  const brasiliaTime = new Date();
-  // Forçar o fuso horário para Brasília (UTC-3)
-  brasiliaTime.setHours(now.getUTCHours() - 3);
-  brasiliaTime.setMinutes(now.getUTCMinutes());
-  
   // Obter o dia da semana (0 = Domingo, 1 = Segunda, ..., 6 = Sábado)
-  const dayOfWeek = brasiliaTime.getDay();
-  // Obter as horas e minutos atuais (no horário de Brasília)
-  const currentHours = brasiliaTime.getHours();
-  const currentMinutes = brasiliaTime.getMinutes();
+  const dayOfWeek = now.getDay();
+  // Obter as horas e minutos atuais
+  const currentHours = now.getHours();
+  const currentMinutes = now.getMinutes();
   
-  console.log(`Horário de Brasília: ${currentHours}:${currentMinutes}, dia da semana: ${dayOfWeek}`);
+  console.log(`Horário atual: ${currentHours}:${currentMinutes}, dia da semana: ${dayOfWeek}`);
   
   // Converter para minutos desde a meia-noite para facilitar a comparação
   const currentTimeInMinutes = currentHours * 60 + currentMinutes;
@@ -221,7 +217,7 @@ const isBarOpen = (hoursText?: string): boolean => {
   return false;
 };
 
-const BarCard: React.FC<BarCardProps> = ({
+const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
   name,
   location,
   description,
@@ -234,14 +230,44 @@ const BarCard: React.FC<BarCardProps> = ({
   maps_url,
   phone,
   instagram,
-  facebook
-}) => {
+  facebook,
+  id
+}, ref) => {
   const isMobile = useIsMobile();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [currentImage, setCurrentImage] = useState(image);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [currentVideoUrl, setCurrentVideoUrl] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState<string>('');
+  
+  // Log para debug - mostrar o ID do bar atual
+  console.log(`BarCard ID: ${id}, Tipo: ${typeof id}`);
+  
+  // Expose the openDetails method via ref
+  useImperativeHandle(ref, () => ({
+    openDetails: () => {
+      setDetailsOpen(true);
+    }
+  }));
+
+  // Atualizar o horário atual a cada minuto
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      setCurrentTime(`${hours}:${minutes}`);
+    };
+    
+    // Atualizar imediatamente
+    updateTime();
+    
+    // Atualizar a cada minuto
+    const interval = setInterval(updateTime, 60000);
+    
+    return () => clearInterval(interval);
+  }, []);
   
   // Reset current image when closing the dialog
   useEffect(() => {
@@ -302,45 +328,45 @@ const BarCard: React.FC<BarCardProps> = ({
     <>
     <div className={`glass-card rounded-xl overflow-hidden card-hover ${isMobile ? 'w-full' : ''}`}>
       <div className={`${isMobile ? 'flex flex-col md:flex-row' : ''}`}>
-        <div className={`${isMobile ? 'w-full md:w-full h-48' : 'h-48'} relative overflow-hidden`}>
+        <div className={`${isMobile ? 'w-full md:w-full h-52' : 'h-52'} relative overflow-hidden`}>
           <img 
             src={image} 
             alt={name} 
             className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
           />
-          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-md flex items-center gap-1">
+          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm px-2.5 py-1.5 rounded-md flex items-center gap-1.5">
             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
             <span className="text-white font-medium text-sm">{rating.toFixed(1)}</span>
           </div>
         </div>
         
-        <div className={`p-5 ${isMobile ? 'w-full' : ''}`}>
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-xl font-bold text-white">{name}</h3>
+        <div className={`p-6 ${isMobile ? 'w-full' : ''}`}>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-2xl font-bold text-white">{name}</h3>
               {hours && (
-                <div className="flex items-center gap-1">
-                  <div className={`w-2.5 h-2.5 rounded-full animate-pulse ${isOpen ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-red-500 shadow-lg shadow-red-500/30'}`}></div>
-                  <span className={`text-xs font-medium ${isOpen ? 'text-green-400' : 'text-red-400'}`}>
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-3 h-3 rounded-full animate-pulse ${isOpen ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-red-500 shadow-lg shadow-red-500/30'}`}></div>
+                  <span className={`text-sm font-medium ${isOpen ? 'text-green-400' : 'text-red-400'}`}>
                     {isOpen ? 'Aberto agora' : 'Fechado'}
                   </span>
                 </div>
               )}
             </div>
-          <div className="flex items-center gap-1 mb-3 text-white/70">
+          <div className="flex items-center gap-1.5 mb-3 text-white/70">
             <MapPin className="w-4 h-4" />
-            <span className="text-sm">{location}</span>
+            <span className="text-base">{location}</span>
           </div>
           
-          <p className="text-gray-400 text-sm line-clamp-3 mb-3">
+          <p className="text-gray-400 text-base line-clamp-3 mb-4">
             {truncateDescription(description)}
           </p>
           
-          <div className="mb-5 mt-5 flex flex-wrap gap-1.5">
+          <div className="mb-5 mt-5 flex flex-wrap gap-2">
             {tags.map((tag, index) => (
               <Badge 
                 key={index}
                 variant="outline" 
-                className="bg-nightlife-950/50 text-white/90 border-nightlife-700/50"
+                className="bg-nightlife-950/50 text-white/90 border-nightlife-700/50 text-sm px-3 py-0.5"
               >
                 {tag}
               </Badge>
@@ -348,18 +374,30 @@ const BarCard: React.FC<BarCardProps> = ({
           </div>
           
           {events.length > 0 && (
-            <div className="border-t border-white/10 pt-3 mt-3">
-              <h4 className="text-sm font-medium text-white/90 mb-2 flex items-center gap-1">
-                <Calendar className="w-4 h-4 text-nightlife-400" />
-                Próximos Eventos
-              </h4>
-              <ul className="space-y-2">
+            <div className="border-t border-white/10 pt-4 mt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-base font-medium text-white/90 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-nightlife-400" />
+                  Próximos Eventos
+                </h4>
+                {events.some(event => event.phone) && (
+                  <a 
+                    href={`https://wa.me/${events.find(event => event.phone)?.phone?.replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-green-400 hover:text-green-300 text-sm"
+                  >
+                    (Fazer reserva)
+                  </a>
+                )}
+              </div>
+              <ul className="space-y-3">
                 {events.slice(0, 2).map((event, index) => (
-                  <li key={index} className="flex items-center gap-2">
-                    <Music className="w-4 h-4 text-nightlife-400" />
+                  <li key={index} className="flex items-center gap-2.5">
+                    <Music className="w-5 h-5 text-nightlife-400" />
                     <div>
-                      <p className="text-white text-sm font-medium">{event.name}</p>
-                      <p className="text-white/60 text-xs">{event.date}</p>
+                      <p className="text-white text-base font-medium">{event.name}</p>
+                      <p className="text-white/60 text-sm">{event.date}</p>
                     </div>
                   </li>
                 ))}
@@ -369,7 +407,7 @@ const BarCard: React.FC<BarCardProps> = ({
           
             <button 
               onClick={() => setDetailsOpen(true)}
-              className="w-full mt-4 py-2 bg-nightlife-600 hover:bg-nightlife-700 text-white rounded-lg transition-colors text-sm font-medium"
+              className="w-full mt-5 py-2.5 bg-nightlife-600 hover:bg-nightlife-700 text-white rounded-lg transition-colors text-base font-medium"
             >
             Ver Detalhes
           </button>
@@ -397,25 +435,72 @@ const BarCard: React.FC<BarCardProps> = ({
                 </div>
               )}
             </div>
-            <DialogDescription className="text-white/70 flex items-center gap-1">
-              <MapPin className="w-4 h-4 text-nightlife-400" />
-              {maps_url ? (
-                <a 
-                  href={maps_url} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="hover:underline flex items-center"
-                >
-                  {location}
-                  <ArrowLeft className="h-3 w-3 ml-1 rotate-[135deg]" />
-                </a>
-              ) : (
-                location
-              )}
+            <DialogDescription className="text-white/70">
+              <div className="space-y-3">
+                {maps_url ? (
+                  <div className="flex items-start gap-2">
+                    <MapPin className="w-4 h-4 text-nightlife-400 mt-0.5" />
+                    <a 
+                      href={maps_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="hover:underline flex items-center"
+                    >
+                      {location}
+                      <ArrowLeft className="h-3 w-3 ml-1 rotate-[135deg]" />
+                    </a>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2">
+                    <MapPin className="w-4 h-4 text-nightlife-400 mt-0.5" />
+                    <span>{location}</span>
+                  </div>
+                )}
+
+                {/* Adicionar opção de compartilhar */}
+                <div className="flex justify-start mt-3">
+                  <a 
+                    href={(() => {
+                      // Garantir que o ID seja válido
+                      if (!id) {
+                        console.error('ID inválido para compartilhamento:', id);
+                        return '#';
+                      }
+                      
+                      // Log para depuração
+                      console.log(`Criando link de compartilhamento para bar ${name} com ID: [${id}]`);
+                      
+                      // Construir a URL completa para compartilhamento
+                      const shareUrl = `${window.location.origin}/bares?bar=${encodeURIComponent(id)}`;
+                      const shareText = `Confira este lugar incrível: ${name}\n${location}\n\nClique no link para ver detalhes: ${shareUrl}`;
+                      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+                      
+                      console.log("URL de compartilhamento:", shareUrl);
+                      return whatsappUrl;
+                    })()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-nightlife-950/50 text-white border border-nightlife-700/50 px-3 py-1 rounded-md hover:bg-nightlife-800/50 transition-colors flex items-center gap-1.5"
+                    onClick={(e) => {
+                      // Verificar se o ID é válido antes de compartilhar
+                      if (!id) {
+                        e.preventDefault();
+                        console.error('Erro: Tentativa de compartilhar bar com ID inválido:', id);
+                        alert('Não foi possível compartilhar este bar. ID inválido.');
+                      } else {
+                        console.log('Compartilhando bar com ID:', id);
+                      }
+                    }}
+                  >
+                    <Share2 className="w-4 h-4" />
+                    Compartilhar
+                  </a>
+                </div>
+              </div>
             </DialogDescription>
           </DialogHeader>
-
-          <div className="mt-2">
+          
+          <div className="mt-4">
             <div className="overflow-hidden rounded-lg h-[300px] w-[300px] mx-auto mb-4 border-2 border-nightlife-800 shadow-lg shadow-nightlife-900/50">
               <img 
                 src={currentImage} 
@@ -515,34 +600,60 @@ const BarCard: React.FC<BarCardProps> = ({
                   <Phone className="w-3 h-3 text-nightlife-400" />
                   Contato
                 </h4>
-                <ul className="space-y-0.5 text-white/70 text-xs">
-                  {phone && <li>{phone}</li>}
+                <div className="bg-nightlife-900/50 p-4 rounded-lg border border-white/10 relative">
+                  <div className="space-y-2">
+                    {phone && (
+                      <div className="flex items-center gap-2 text-white/80">
+                        <Phone className="h-4 w-4" />
+                        <a href={`tel:${phone}`} className="hover:text-nightlife-500 transition-colors">
+                          {phone}
+                        </a>
+                      </div>
+                    )}
+                    {instagram && (
+                      <div className="flex items-center gap-2 text-white/80">
+                        <Instagram className="h-4 w-4" />
+                        <a 
+                          href={`https://instagram.com/${instagram.replace('@', '')}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="hover:text-nightlife-500 transition-colors"
+                        >
+                          Instagram
+                        </a>
+                      </div>
+                    )}
+                    {facebook && (
+                      <div className="flex items-center gap-2 text-white/80">
+                        <Facebook className="h-4 w-4" />
+                        <a 
+                          href={facebook} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="hover:text-nightlife-500 transition-colors"
+                        >
+                          Facebook
+                        </a>
+                      </div>
+                    )}
+                  </div>
                   {instagram && (
-                    <li className="flex items-center gap-1 cursor-pointer hover:text-nightlife-400">
-                      <Instagram className="w-3 h-3" />
-                      <span>{instagram}</span>
-                    </li>
+                    <div className="absolute top-1/2 right-4 transform -translate-y-1/2">
+                      <a 
+                        href={`https://instagram.com/${instagram.replace('@', '')}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex flex-col items-center gap-1 hover:text-nightlife-500 transition-colors group"
+                      >
+                        <div className="relative">
+                          <Instagram className="h-8 w-8 group-hover:scale-110 group-hover:text-pink-500 transition-all duration-300 animate-pulse-slow" />
+                          <span className="absolute inset-0 bg-pink-500/30 blur-md rounded-full opacity-0 group-hover:opacity-50 transition-opacity duration-300"></span>
+                        </div>
+                        <span className="text-sm group-hover:text-pink-500 transition-colors">Seguir</span>
+                      </a>
+                    </div>
                   )}
-                  {facebook && (
-                    <li className="flex items-center gap-1 cursor-pointer hover:text-nightlife-400">
-                      <Facebook className="w-3 h-3" />
-                      <span>{facebook}</span>
-                    </li>
-                  )}
-                  {!phone && !instagram && !facebook && (
-                    <>
-                      <li>Telefone: (11) 9999-9999</li>
-                      <li className="flex items-center gap-1 cursor-pointer hover:text-nightlife-400">
-                        <Instagram className="w-3 h-3" />
-                        <span>@{name.toLowerCase().replace(/\s+/g, '')}</span>
-                      </li>
-                      <li className="flex items-center gap-1 cursor-pointer hover:text-nightlife-400">
-                        <Facebook className="w-3 h-3" />
-                        <span>facebook.com/{name.toLowerCase().replace(/\s+/g, '')}</span>
-                      </li>
-                    </>
-                  )}
-                </ul>
+                </div>
               </div>
             </div>
 
@@ -560,6 +671,17 @@ const BarCard: React.FC<BarCardProps> = ({
                         <Calendar className="w-3 h-3 text-nightlife-400" />
                         {event.date}
                       </p>
+                      {event.phone && (
+                        <a 
+                          href={`https://wa.me/${event.phone.replace(/\D/g, '')}?text=Olá%20gostaria%20de%20fazer%20reserva%20para%20-%20${encodeURIComponent(event.name)}%20(${encodeURIComponent(event.date)})`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-green-400 hover:text-green-300 text-xs flex items-center gap-1 mt-1"
+                        >
+                          <Phone className="w-3 h-3" />
+                          Fazer reserva
+                        </a>
+                      )}
                       {event.youtube_url && (
                         <div 
                           className="mt-2 relative cursor-pointer rounded overflow-hidden group"
@@ -586,6 +708,13 @@ const BarCard: React.FC<BarCardProps> = ({
                 </div>
               </div>
             )}
+
+            <div className="grid gap-4">
+              <div className="flex items-start gap-2">
+                <MapPin className="w-4 h-4 text-nightlife-400 mt-0.5" />
+                <span className="text-white/70">{location}</span>
+              </div>
+            </div>
 
             <div className="flex justify-between items-center gap-2 mt-3">
               <p className="text-white/70 text-xs">Feito por Garimpo de Ofertas</p>
@@ -627,6 +756,6 @@ const BarCard: React.FC<BarCardProps> = ({
       </Dialog>
     </>
   );
-};
+});
 
 export default BarCard;
