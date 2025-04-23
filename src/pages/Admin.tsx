@@ -30,7 +30,7 @@ interface Bar {
     youtube_url?: string;
     phone?: string;
   }[];
-  tags: string[];
+  tags: string[] | string;
   maps_url?: string;
   phone?: string;
   instagram?: string;
@@ -288,6 +288,10 @@ const Admin: React.FC = () => {
   // Adicionar um estado para controlar quando mostrar a mensagem pós-reload
   const [showSaveReminder, setShowSaveReminder] = useState(false);
 
+  // Adicionar novo estado para rastrear as imagens
+  const [mainImageFile, setMainImageFile] = useState<File | null>(null);
+  const [additionalImageFiles, setAdditionalImageFiles] = useState<(File | null)[]>([null, null, null]);
+
   // Adicionar um efeito para verificar se a página foi recarregada devido ao aviso
   useEffect(() => {
     // Verificar se existe um flag no sessionStorage indicando que a página foi recarregada após aviso
@@ -419,24 +423,45 @@ const Admin: React.FC = () => {
     }
   };
 
-  // Função para fazer upload de imagem para o Supabase Storage
+  // Update the handleFileChange function to store file data
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, isEventImage: boolean = false, additionalImageIndex?: number) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Exibir preview da imagem selecionada
+    // Create a data URL from the file for persistence
     const reader = new FileReader();
     reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      
+      // Store in the appropriate state
       if (isEventImage) {
-        setEventImagePreview(event.target?.result as string);
+        setEventImagePreview(URL.createObjectURL(file));
+        // Store the data URL in sessionStorage for retrieval after navigation
+        sessionStorage.setItem('eventImageDataUrl', dataUrl);
       } else if (additionalImageIndex !== undefined) {
+        // Save the file for the additional image
+        const newAdditionalFiles = [...additionalImageFiles];
+        newAdditionalFiles[additionalImageIndex] = file;
+        setAdditionalImageFiles(newAdditionalFiles);
+        
+        // Update the preview
+        const objectUrl = URL.createObjectURL(file);
         setAdditionalImagePreviews(prev => {
           const newPreviews = [...prev];
-          newPreviews[additionalImageIndex] = event.target?.result as string;
+          newPreviews[additionalImageIndex] = objectUrl;
           return newPreviews;
         });
+        
+        // Store the data URL in sessionStorage
+        const additionalImageDataUrls = JSON.parse(sessionStorage.getItem('additionalImageDataUrls') || '[]');
+        additionalImageDataUrls[additionalImageIndex] = dataUrl;
+        sessionStorage.setItem('additionalImageDataUrls', JSON.stringify(additionalImageDataUrls));
       } else {
-        setImagePreview(event.target?.result as string);
+        // Save the main image file
+        setMainImageFile(file);
+        setImagePreview(URL.createObjectURL(file));
+        // Store the data URL in sessionStorage
+        sessionStorage.setItem('mainImageDataUrl', dataUrl);
       }
     };
     reader.readAsDataURL(file);
@@ -508,13 +533,13 @@ const Admin: React.FC = () => {
       
       // Verificar limite de tags (máximo 4)
       let processedTags: string[] = [];
+      
       if (typeof newBar.tags === 'string') {
-        processedTags = (newBar.tags || '').split(',').map(tag => tag.trim()).filter(tag => tag.length > 0).slice(0, 4);
+        // Se for string, dividir por vírgulas
+        processedTags = (newBar.tags as string).split(',').map(tag => tag.trim()).filter(tag => tag.length > 0).slice(0, 4);
       } else if (Array.isArray(newBar.tags)) {
+        // Se for array, apenas limitar a 4
         processedTags = newBar.tags.slice(0, 4);
-      } else {
-        // Se não for nem string nem array, usar array vazio
-        processedTags = [];
       }
       
       if (processedTags.length > 4) {
@@ -552,8 +577,8 @@ const Admin: React.FC = () => {
       let imageUrl = newBar.image;
       
       // Se houver um arquivo selecionado, fazer upload
-      if (fileInputRef.current?.files?.length) {
-        const uploadedUrl = await handleImageUpload(fileInputRef.current.files[0]);
+      if (mainImageFile) {
+        const uploadedUrl = await handleImageUpload(mainImageFile);
         if (uploadedUrl) {
           imageUrl = uploadedUrl;
         }
@@ -563,8 +588,8 @@ const Admin: React.FC = () => {
       let additionalImages = Array.isArray(newBar.additional_images) ? [...newBar.additional_images] : [];
       
       for (let i = 0; i < 3; i++) {
-        if (additionalFileInputRefs.current[i]?.files?.length) {
-          const uploadedUrl = await handleImageUpload(additionalFileInputRefs.current[i]!.files[0]);
+        if (additionalImageFiles[i]) {
+          const uploadedUrl = await handleImageUpload(additionalImageFiles[i]!);
           if (uploadedUrl) {
             // Se já existe uma imagem nessa posição, substitui; caso contrário, adiciona
             if (i < additionalImages.length) {
@@ -736,6 +761,16 @@ const Admin: React.FC = () => {
         variant: "destructive"
       });
     }
+    
+    // Clear the sessionStorage only after successful submission
+    sessionStorage.removeItem('imagePreview');
+    sessionStorage.removeItem('eventImagePreview');
+    sessionStorage.removeItem('additionalImagePreviews');
+    sessionStorage.removeItem('currentBarData');
+    sessionStorage.removeItem('imageStateSaved');
+    
+    // Reset form and update state
+    clearBarForm();
   };
 
   // Adicionar novo evento
@@ -823,10 +858,13 @@ const Admin: React.FC = () => {
 
   // Iniciar edição de bar
   const startEditBar = (bar: Bar) => {
+    // Converter tags para string se for array
+    const tagsAsString = Array.isArray(bar.tags) ? bar.tags.join(', ') : (bar.tags || '');
+    
     setNewBar({
       ...bar,
       // Garantir que tags seja convertido para string, independentemente do tipo original
-      tags: Array.isArray(bar.tags) ? bar.tags.join(', ') : bar.tags || '',
+      tags: tagsAsString,
       eventName1: bar.events?.[0]?.name || '',
       eventDate1: bar.events?.[0]?.date || '',
       eventYoutubeUrl1: bar.events?.[0]?.youtube_url || '',
@@ -1013,20 +1051,32 @@ const Admin: React.FC = () => {
       ...newBar,
       additional_images: updatedImages
     });
+    
     // Limpar o preview
-    setAdditionalImagePreviews(prev => {
-      const newPreviews = [...prev];
-      newPreviews[index] = null;
-      return newPreviews;
-    });
+    const newPreviews = [...additionalImagePreviews];
+    newPreviews[index] = null;
+    setAdditionalImagePreviews(newPreviews);
+    
+    // Limpar o arquivo
+    const newAdditionalFiles = [...additionalImageFiles];
+    newAdditionalFiles[index] = null;
+    setAdditionalImageFiles(newAdditionalFiles);
+    
     // Limpar o input de arquivo
     if (additionalFileInputRefs.current[index]) {
       additionalFileInputRefs.current[index]!.value = '';
     }
     
+    // Atualizar previews armazenados
+    try {
+      sessionStorage.setItem('additionalImagePreviews', JSON.stringify(newPreviews));
+    } catch (error) {
+      console.error('Erro ao atualizar previews no sessionStorage:', error);
+    }
+    
     toast({
       title: "Imagem removida",
-      description: `A imagem ${index + 1} foi removida com sucesso.`
+      description: `A imagem adicional foi removida com sucesso.`
     });
   };
 
@@ -1037,11 +1087,15 @@ const Admin: React.FC = () => {
       image: ''
     });
     setImagePreview(null);
+    setMainImageFile(null);
     
     // Limpar o input de arquivo
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+    
+    // Remover preview armazenado
+    sessionStorage.removeItem('imagePreview');
     
     toast({
       title: "Imagem removida",
@@ -1059,15 +1113,13 @@ const Admin: React.FC = () => {
     }));
   };
 
-  // Corrigir a função handleTagsChange para converter a string de input para array ao armazenar
+  // Corrigir a função handleTagsChange para manter o valor como está no input
   const handleTagsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    // Converter a string de input para array antes de armazenar
-    const tagsArray = value ? value.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0) : [];
-    
+    // Armazenar o valor como string no estado
     setNewBar(prev => ({
       ...prev,
-      tags: tagsArray
+      tags: value
     }));
   };
 
@@ -1172,6 +1224,212 @@ const Admin: React.FC = () => {
     eventImagePreview, 
     additionalImagePreviews
   ]);
+
+  // Efeito para salvar os estados das imagens quando o usuário sair da página
+  useEffect(() => {
+    // Função para serializar e salvar imagens no sessionStorage quando o usuário sair da página
+    const handleBeforeUnload = () => {
+      try {
+        // Save image previews in sessionStorage
+        if (imagePreview) {
+          sessionStorage.setItem('imagePreview', imagePreview);
+        }
+        if (eventImagePreview) {
+          sessionStorage.setItem('eventImagePreview', eventImagePreview);
+        }
+        
+        // Save additional image previews
+        sessionStorage.setItem('additionalImagePreviews', JSON.stringify(additionalImagePreviews));
+        
+        // Also save the current bar data to ensure it's not lost
+        sessionStorage.setItem('currentBarData', JSON.stringify(newBar));
+        
+        // Track that we've saved the state before unload
+        sessionStorage.setItem('imageStateSaved', 'true');
+      } catch (error) {
+        console.error('Erro ao salvar previews de imagem no sessionStorage:', error);
+      }
+    };
+
+    // Registrar evento para detectar quando o usuário está prestes a sair da página
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    // Limpar o evento ao desmontar
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [imagePreview, eventImagePreview, additionalImagePreviews, newBar]);
+
+  // Efeito para recuperar os estados das imagens quando o usuário voltar à página
+  useEffect(() => {
+    // Verificar se existe um flag indicando que o usuário navegou para fora e voltou
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Check if user has navigated away and back
+        const imageStateSaved = sessionStorage.getItem('imageStateSaved');
+        
+        if (imageStateSaved === 'true') {
+          try {
+            const savedImagePreview = sessionStorage.getItem('imagePreview');
+            const savedEventImagePreview = sessionStorage.getItem('eventImagePreview');
+            const savedAdditionalImagePreviews = sessionStorage.getItem('additionalImagePreviews');
+            const savedBarData = sessionStorage.getItem('currentBarData');
+            
+            // Restore image previews
+            if (savedImagePreview) {
+              setImagePreview(savedImagePreview);
+            }
+            if (savedEventImagePreview) {
+              setEventImagePreview(savedEventImagePreview);
+            }
+            if (savedAdditionalImagePreviews) {
+              setAdditionalImagePreviews(JSON.parse(savedAdditionalImagePreviews));
+            }
+            
+            // Restore bar data if available
+            if (savedBarData) {
+              const parsedBarData = JSON.parse(savedBarData);
+              // Only update if we have valid data
+              if (parsedBarData && parsedBarData.name) {
+                setNewBar(parsedBarData);
+              }
+            }
+            
+            // Reconstruct File objects from data URLs
+            const mainImageDataUrl = sessionStorage.getItem('mainImageDataUrl');
+            if (mainImageDataUrl) {
+              const file = reconstructFileFromDataUrl(mainImageDataUrl, 'main-image.jpg');
+              if (file) {
+                setMainImageFile(file);
+              }
+            }
+            
+            const eventImageDataUrl = sessionStorage.getItem('eventImageDataUrl');
+            if (eventImageDataUrl) {
+              const file = reconstructFileFromDataUrl(eventImageDataUrl, 'event-image.jpg');
+              // We don't store event image file in state, so just update the input if needed
+              if (file && eventFileInputRef.current) {
+                // Cannot directly set File to input element, but will be uploaded on form submit
+              }
+            }
+            
+            // Reconstruct additional image files
+            const additionalImageDataUrls = JSON.parse(sessionStorage.getItem('additionalImageDataUrls') || '[]');
+            if (additionalImageDataUrls && additionalImageDataUrls.length > 0) {
+              const newFiles: (File | null)[] = [...additionalImageFiles];
+              
+              additionalImageDataUrls.forEach((dataUrl: string, index: number) => {
+                if (dataUrl) {
+                  const file = reconstructFileFromDataUrl(dataUrl, `additional-image-${index}.jpg`);
+                  if (file) {
+                    newFiles[index] = file;
+                  }
+                }
+              });
+              
+              setAdditionalImageFiles(newFiles);
+            }
+          } catch (error) {
+            console.error('Erro ao recuperar estado de imagens do sessionStorage:', error);
+          }
+        }
+      }
+    };
+    
+    // Registrar o evento de mudança de visibilidade
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Executar uma vez para verificar se há dados ao montar o componente
+    handleVisibilityChange();
+    
+    // Limpar o evento ao desmontar
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  // Limpar o formulário e o estado
+  const clearBarForm = () => {
+    setNewBar({
+      id: 0,
+      name: '',
+      location: '',
+      description: '',
+      rating: 4.5, // Avaliação padrão 4.5
+      image: '',
+      additional_images: [],
+      events: [],
+      tags: '',
+      maps_url: '',
+      eventName1: '',
+      eventDate1: '',
+      eventYoutubeUrl1: '',
+      eventPhone1: '',
+      eventName2: '',
+      eventDate2: '',
+      eventYoutubeUrl2: '',
+      eventPhone2: '',
+      eventName3: '',
+      eventDate3: '',
+      eventYoutubeUrl3: '',
+      eventPhone3: '',
+      eventName4: '',
+      eventDate4: '',
+      eventYoutubeUrl4: '',
+      eventPhone4: '',
+      phone: '',
+      instagram: '',
+      facebook: '',
+      hours: ''
+    });
+    
+    // Limpar previews de imagem
+    setImagePreview(null);
+    setAdditionalImagePreviews([null, null, null]);
+    
+    // Limpar arquivos de imagem
+    setMainImageFile(null);
+    setAdditionalImageFiles([null, null, null]);
+    
+    // Limpar inputs de arquivo
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    additionalFileInputRefs.current.forEach(ref => {
+      if (ref) ref.value = '';
+    });
+    
+    // Clear all related sessionStorage
+    sessionStorage.removeItem('imagePreview');
+    sessionStorage.removeItem('eventImagePreview');
+    sessionStorage.removeItem('additionalImagePreviews');
+    sessionStorage.removeItem('currentBarData');
+    sessionStorage.removeItem('imageStateSaved');
+    sessionStorage.removeItem('mainImageDataUrl');
+    sessionStorage.removeItem('eventImageDataUrl');
+    sessionStorage.removeItem('additionalImageDataUrls');
+  };
+
+  // Add a function to reconstruct File objects from data URLs
+  const reconstructFileFromDataUrl = (dataUrl: string, fileName: string = 'image.jpg', fileType: string = 'image/jpeg'): File | null => {
+    try {
+      // Extract the base64 data from the Data URL
+      const base64String = dataUrl.split(',')[1];
+      if (!base64String) return null;
+      
+      // Convert base64 to binary
+      const binaryString = atob(base64String);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      // Create Blob and then File from binary data
+      const blob = new Blob([bytes], { type: fileType });
+      return new File([blob], fileName, { type: fileType });
+    } catch (error) {
+      console.error('Error reconstructing file from data URL:', error);
+      return null;
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-black text-white">
@@ -1624,7 +1882,7 @@ const Admin: React.FC = () => {
                     <label className="text-sm text-white/70 mb-1 block">Tags (separadas por vírgula)</label>
                     <Input
                       name="tags"
-                      value={Array.isArray(newBar.tags) ? newBar.tags.join(', ') : ''}
+                      value={typeof newBar.tags === 'string' ? newBar.tags : Array.isArray(newBar.tags) ? newBar.tags.join(', ') : ''}
                       placeholder="Separe as tags por vírgula (máximo 4)"
                       onChange={handleTagsChange}
                       className="bg-nightlife-950 border-white/20"
