@@ -6,7 +6,7 @@ export function useBars() {
   return useQuery({
     queryKey: ['bars'],
     queryFn: getBars,
-    staleTime: 1000, // 1 segundo
+    staleTime: 5 * 60 * 1000, // 5 minutos
     refetchOnWindowFocus: true,
   });
 }
@@ -16,7 +16,7 @@ export function useEvents() {
   return useQuery({
     queryKey: ['events'],
     queryFn: getEvents,
-    staleTime: 1000, // 1 segundo
+    staleTime: 5 * 60 * 1000, // 5 minutos
     refetchOnWindowFocus: true,
   });
 } 

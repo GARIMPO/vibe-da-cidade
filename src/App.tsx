@@ -11,8 +11,19 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
 import CookieConsent from '@/components/CookieConsent';
 
-// Criar o cliente do React Query
-const queryClient = new QueryClient();
+// Criar o cliente do React Query com configurações melhoradas
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutos
+      refetchOnWindowFocus: true, // Atualizado para true para refetchar ao voltar à página
+      refetchOnMount: true, // Atualizado para true para refetchar ao montar
+      refetchOnReconnect: true, // Atualizado para true para refetchar ao reconectar
+      retry: 1,
+      gcTime: 10 * 60 * 1000, // 10 minutos
+    },
+  },
+});
 
 const App: React.FC = () => {
   return (

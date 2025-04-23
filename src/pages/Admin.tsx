@@ -184,6 +184,21 @@ const formatHoursForSave = (hoursData: {[key: string]: {open: string, close: str
   return lines.join('\n');
 };
 
+// Classe auxiliar para simular envio de formulários de maneira programática
+class DirectSubmitController {
+  // Método estático para simular o envio de um formulário pelo ID
+  static submitForm(formId: string): boolean {
+    const form = document.getElementById(formId) as HTMLFormElement;
+    if (form) {
+      // Criar e disparar um evento de envio de formulário
+      const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+      form.dispatchEvent(submitEvent);
+      return true;
+    }
+    return false;
+  }
+}
+
 const Admin: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -222,7 +237,7 @@ const Admin: React.FC = () => {
     name: '',
     location: '',
     description: '',
-    rating: 0,
+    rating: 4.5,
     image: '',
     additional_images: [],
     events: [],
@@ -267,39 +282,69 @@ const Admin: React.FC = () => {
     ? bars 
     : bars?.filter(bar => bar.user_id === user?.id);
 
+  // Adicionar novo estado para rastrear se o usuário navegou para fora da página
+  const [leftAndReturned, setLeftAndReturned] = useState(false);
+
+  // Adicionar um estado para controlar quando mostrar a mensagem pós-reload
+  const [showSaveReminder, setShowSaveReminder] = useState(false);
+
+  // Adicionar um efeito para verificar se a página foi recarregada devido ao aviso
+  useEffect(() => {
+    // Verificar se existe um flag no sessionStorage indicando que a página foi recarregada após aviso
+    const needsToSave = sessionStorage.getItem('needsToSave');
+    if (needsToSave === 'true') {
+      // Mostrar o lembrete para salvar
+      setShowSaveReminder(true);
+      // Limpar o flag
+      sessionStorage.removeItem('needsToSave');
+      
+      // Mostrar toast com mensagem e botão de salvamento
+      toast({
+        title: "Página atualizada",
+        description: "Agora você pode continuar editando e salvar seu projeto",
+        variant: "default",
+        action: (
+          <Button 
+            onClick={() => DirectSubmitController.submitForm('add-bar-form')}
+            variant="default"
+            className="bg-nightlife-600 hover:bg-nightlife-700 text-white"
+          >
+            Salvar Agora
+          </Button>
+        ),
+        duration: 10000, // 10 segundos para dar tempo de ler e usar o botão
+      });
+    }
+  }, []);
+
+  // Adicionar um evento para detectar quando o usuário volta à página
+  useEffect(() => {
+    // Função para detectar quando a página fica visível (usuário retorna)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Se estava escondida e agora está visível, o usuário voltou para a página
+        setLeftAndReturned(true);
+        console.log('Usuário voltou para a página. Sugerindo recarregar antes de salvar.');
+      }
+    };
+
+    // Registrar o evento
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Limpar o evento ao desmontar
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   // Atualizar campos do novo bar
   const handleBarChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    
-    // Se for um campo de evento, atualiza o array de eventos
-    if (name.startsWith('event')) {
-      setNewBar(prev => {
-        const eventIndex = parseInt(name.replace(/\D/g, '')) - 1;
-        const eventField = name.replace(/event\d+/, '').toLowerCase();
-        
-        const updatedEvents = [...(prev.events || [])];
-        if (!updatedEvents[eventIndex]) {
-          updatedEvents[eventIndex] = { name: '', date: '', youtube_url: '', phone: '' };
-        }
-        
-        updatedEvents[eventIndex] = {
-          ...updatedEvents[eventIndex],
-          [eventField]: value
-        };
-        
-        return {
-          ...prev,
-          [name]: value,
-          events: updatedEvents
-        };
-      });
-    } else {
-      // Para outros campos, atualiza normalmente
-      setNewBar(prev => ({
-        ...prev,
-        [name]: value
-      }));
-    }
+    console.log(`Mudança de campo: ${name} = ${value}`);
+    setNewBar(prev => ({
+      ...prev,
+      [name]: value
+    }));
   };
 
   // Atualizar campos do novo evento
@@ -412,9 +457,44 @@ const Admin: React.FC = () => {
     additionalFileInputRefs.current[index]?.click();
   };
 
+  // Modificar a função reloadPage para adicionar o flag antes de recarregar
+  const reloadPage = () => {
+    // Definir um flag no sessionStorage para indicar que a página está sendo recarregada após um aviso
+    sessionStorage.setItem('needsToSave', 'true');
+    window.location.reload();
+  };
+
+  // Função para mostrar a notificação de atualização
+  const showReloadNotification = () => {
+    toast({
+      title: "Atenção",
+      description: "Atenção você navegou para outra página e retornou, agora você precisa atualizar esta página e salvar as alterações feitas.",
+      variant: "destructive",
+      action: (
+        <Button 
+          onClick={reloadPage} 
+          variant="outline"
+          className="border-white/20"
+        >
+          Atualizar Página
+        </Button>
+      ),
+      // A notificação não vai fechar automaticamente
+      duration: Infinity,
+    });
+  };
+
   // Adicionar ou atualizar bar
   const addOrUpdateBar = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Se o usuário navegou para fora e voltou, mostrar a notificação
+    if (leftAndReturned) {
+      showReloadNotification();
+      // Opcional: resetar o estado para permitir tentar novamente
+      setLeftAndReturned(false);
+      return;
+    }
     
     try {
       if (!newBar.name.trim() || !newBar.description.trim() || !newBar.location.trim()) {
@@ -427,8 +507,17 @@ const Admin: React.FC = () => {
       }
       
       // Verificar limite de tags (máximo 4)
-      const tagsArray = newBar.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
-      if (tagsArray.length > 4) {
+      let processedTags: string[] = [];
+      if (typeof newBar.tags === 'string') {
+        processedTags = (newBar.tags || '').split(',').map(tag => tag.trim()).filter(tag => tag.length > 0).slice(0, 4);
+      } else if (Array.isArray(newBar.tags)) {
+        processedTags = newBar.tags.slice(0, 4);
+      } else {
+        // Se não for nem string nem array, usar array vazio
+        processedTags = [];
+      }
+      
+      if (processedTags.length > 4) {
         toast({
           title: "Limite de tags",
           description: "Você pode adicionar no máximo 4 tags para um bar.",
@@ -471,7 +560,7 @@ const Admin: React.FC = () => {
       }
       
       // Upload de imagens adicionais
-      let additionalImages = [...newBar.additional_images];
+      let additionalImages = Array.isArray(newBar.additional_images) ? [...newBar.additional_images] : [];
       
       for (let i = 0; i < 3; i++) {
         if (additionalFileInputRefs.current[i]?.files?.length) {
@@ -488,7 +577,22 @@ const Admin: React.FC = () => {
       }
       
       // Preparar os dados para salvar
-      const barData: any = {
+      const barData: {
+        name: string;
+        location: string;
+        maps_url?: string;
+        description: string;
+        rating: number;
+        image: string;
+        additional_images: string[];
+        tags: string[];
+        events: { name: string; date: string; youtube_url?: string; phone?: string }[];
+        phone?: string;
+        instagram?: string;
+        facebook?: string;
+        hours?: string;
+        user_id?: string;
+      } = {
         name: newBar.name,
         location: newBar.location,
         maps_url: newBar.maps_url,
@@ -496,12 +600,12 @@ const Admin: React.FC = () => {
         rating: parseFloat(newBar.rating.toString()),
         image: imageUrl || 'https://images.unsplash.com/photo-1514933651103-005eec06c04b',
         additional_images: additionalImages,
-        tags: newBar.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0).slice(0, 4),
+        tags: processedTags,
         events: [
-          { name: newBar.eventName1, date: newBar.eventDate1, youtube_url: newBar.eventYoutubeUrl1, phone: newBar.eventPhone1 },
-          { name: newBar.eventName2, date: newBar.eventDate2, youtube_url: newBar.eventYoutubeUrl2, phone: newBar.eventPhone2 },
-          { name: newBar.eventName3, date: newBar.eventDate3, youtube_url: newBar.eventYoutubeUrl3, phone: newBar.eventPhone3 },
-          { name: newBar.eventName4, date: newBar.eventDate4, youtube_url: newBar.eventYoutubeUrl4, phone: newBar.eventPhone4 }
+          { name: newBar.eventName1 || '', date: newBar.eventDate1 || '', youtube_url: newBar.eventYoutubeUrl1, phone: newBar.eventPhone1 },
+          { name: newBar.eventName2 || '', date: newBar.eventDate2 || '', youtube_url: newBar.eventYoutubeUrl2, phone: newBar.eventPhone2 },
+          { name: newBar.eventName3 || '', date: newBar.eventDate3 || '', youtube_url: newBar.eventYoutubeUrl3, phone: newBar.eventPhone3 },
+          { name: newBar.eventName4 || '', date: newBar.eventDate4 || '', youtube_url: newBar.eventYoutubeUrl4, phone: newBar.eventPhone4 }
         ].filter(event => event.name && event.date),
         phone: newBar.phone,
         instagram: newBar.instagram,
@@ -516,92 +620,119 @@ const Admin: React.FC = () => {
       
       console.log('Enviando dados do bar:', barData);
       
-      let result;
-      
-      if (isEditMode && currentBarId) {
-        // Atualizar bar existente
-        result = await supabase
-          .from('bars')
-          .update(barData)
-          .eq('id', currentBarId)
-          .select();
-          
-        if (result.error) throw result.error;
+      try {
+        let result;
         
-        toast({
-          title: "Bar atualizado",
-          description: `${barData.name} foi atualizado com sucesso.`
+        if (isEditMode && currentBarId) {
+          // Atualizar bar existente
+          result = await supabase
+            .from('bars')
+            .update(barData)
+            .eq('id', currentBarId)
+            .select();
+            
+          if (result.error) {
+            console.error("Erro ao atualizar bar:", result.error);
+            throw result.error;
+          }
+          
+          toast({
+            title: "Bar atualizado",
+            description: `${barData.name} foi atualizado com sucesso.`
+          });
+          
+        } else {
+          // Inserir novo bar
+          result = await supabase
+            .from('bars')
+            .insert(barData)
+            .select();
+            
+          if (result.error) {
+            console.error("Erro ao inserir bar:", result.error);
+            throw result.error;
+          }
+          
+          toast({
+            title: "Bar adicionado",
+            description: `${barData.name} foi adicionado com sucesso.`
+          });
+        }
+        
+        // Limpar o formulário e atualizar a lista
+        setNewBar({
+          id: 0,
+          name: '',
+          location: '',
+          description: '',
+          rating: 4.5, // Avaliação padrão 4.5
+          image: '',
+          additional_images: [],
+          events: [],
+          tags: [],
+          maps_url: '',
+          eventName1: '',
+          eventDate1: '',
+          eventYoutubeUrl1: '',
+          eventPhone1: '',
+          eventName2: '',
+          eventDate2: '',
+          eventYoutubeUrl2: '',
+          eventPhone2: '',
+          eventName3: '',
+          eventDate3: '',
+          eventYoutubeUrl3: '',
+          eventPhone3: '',
+          eventName4: '',
+          eventDate4: '',
+          eventYoutubeUrl4: '',
+          eventPhone4: '',
+          phone: '',
+          instagram: '',
+          facebook: '',
+          hours: ''
         });
         
-      } else {
-        // Inserir novo bar
-        result = await supabase
-          .from('bars')
-          .insert(barData)
-          .select();
-          
-        if (result.error) throw result.error;
+        // Limpar o localStorage após salvamento bem-sucedido
+        localStorage.removeItem('newBar');
+        localStorage.removeItem('isEditMode');
+        localStorage.removeItem('currentBarId');
+        localStorage.removeItem('imagePreview');
+        localStorage.removeItem('additionalImagePreviews');
         
-        toast({
-          title: "Bar adicionado",
-          description: `${barData.name} foi adicionado com sucesso.`
+        // Limpar previews de imagem
+        setImagePreview(null);
+        setAdditionalImagePreviews([null, null, null]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        additionalFileInputRefs.current.forEach(ref => {
+          if (ref) ref.value = '';
         });
-      }
-      
-      // Limpar o formulário e atualizar a lista
-      setNewBar({
-        id: 0,
-        name: '',
-        location: '',
-        maps_url: '',
-        description: '',
-        rating: 4.5,
-        image: '',
-        additional_images: [],
-        tags: '',
-        eventName1: '',
-        eventDate1: '',
-        eventYoutubeUrl1: '',
-        eventName2: '',
-        eventDate2: '',
-        eventYoutubeUrl2: '',
-        eventName3: '',
-        eventDate3: '',
-        eventYoutubeUrl3: '',
-        eventName4: '',
-        eventDate4: '',
-        eventYoutubeUrl4: '',
-        phone: '',
-        instagram: '',
-        facebook: '',
-        hours: ''
-      });
-      
-      // Limpar previews de imagem
-      setImagePreview(null);
-      setAdditionalImagePreviews([null, null, null]);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      additionalFileInputRefs.current.forEach(ref => {
-        if (ref) ref.value = '';
-      });
-      
-      // Atualizar a lista de bares
-      queryClient.invalidateQueries({ queryKey: ['bars'] });
-      queryClient.refetchQueries({ queryKey: ['bars'] });
-      setIsEditMode(false);
-      setCurrentBarId(null);
-      
-      // Aguardar um pouco e fazer uma segunda tentativa de atualizar a lista
-      setTimeout(() => {
+        
+        // Atualizar a lista de bares
         queryClient.invalidateQueries({ queryKey: ['bars'] });
         queryClient.refetchQueries({ queryKey: ['bars'] });
-      }, 1000);
-      
+        
+        setIsEditMode(false);
+        setCurrentBarId(null);
+        
+        // Aguardar um pouco e fazer uma segunda tentativa de atualizar a lista
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ['bars'] });
+          queryClient.refetchQueries({ queryKey: ['bars'] });
+        }, 1000);
+      } catch (supabaseError) {
+        console.error("Erro do Supabase:", supabaseError);
+        toast({
+          title: "Erro ao salvar",
+          description: "Ocorreu um erro ao salvar o bar no banco de dados. Por favor, tente novamente.",
+          variant: "destructive"
+        });
+      }
     } catch (error) {
       console.error("Erro ao salvar bar:", error);
       toast({
         title: "Erro",
-        description: "Ocorreu um erro ao salvar o bar. Por favor, tente novamente.",
+        description: "Ocorreu um erro ao processar os dados. Por favor, tente novamente.",
         variant: "destructive"
       });
     }
@@ -610,6 +741,14 @@ const Admin: React.FC = () => {
   // Adicionar novo evento
   const addEvent = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Se o usuário navegou para fora e voltou, mostrar a notificação
+    if (leftAndReturned) {
+      showReloadNotification();
+      // Opcional: resetar o estado para permitir tentar novamente
+      setLeftAndReturned(false);
+      return;
+    }
     
     try {
       let imageUrl = newEvent.image;
@@ -659,6 +798,13 @@ const Admin: React.FC = () => {
       
       // Atualizar a lista de eventos
       queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.refetchQueries({ queryKey: ['events'] });
+      
+      // Aguardar um pouco e fazer uma segunda tentativa de atualizar a lista
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['events'] });
+        queryClient.refetchQueries({ queryKey: ['events'] });
+      }, 1000);
       
       toast({
         title: "Evento adicionado",
@@ -679,7 +825,8 @@ const Admin: React.FC = () => {
   const startEditBar = (bar: Bar) => {
     setNewBar({
       ...bar,
-      tags: bar.tags.join(', '),
+      // Garantir que tags seja convertido para string, independentemente do tipo original
+      tags: Array.isArray(bar.tags) ? bar.tags.join(', ') : bar.tags || '',
       eventName1: bar.events?.[0]?.name || '',
       eventDate1: bar.events?.[0]?.date || '',
       eventYoutubeUrl1: bar.events?.[0]?.youtube_url || '',
@@ -715,24 +862,29 @@ const Admin: React.FC = () => {
       id: 0,
       name: '',
       location: '',
-      maps_url: '',
       description: '',
       rating: 4.5,
       image: '',
       additional_images: [],
-      tags: '',
+      events: [],
+      tags: [],
+      maps_url: '',
       eventName1: '',
       eventDate1: '',
       eventYoutubeUrl1: '',
+      eventPhone1: '',
       eventName2: '',
       eventDate2: '',
       eventYoutubeUrl2: '',
+      eventPhone2: '',
       eventName3: '',
       eventDate3: '',
       eventYoutubeUrl3: '',
+      eventPhone3: '',
       eventName4: '',
       eventDate4: '',
       eventYoutubeUrl4: '',
+      eventPhone4: '',
       phone: '',
       instagram: '',
       facebook: '',
@@ -897,6 +1049,130 @@ const Admin: React.FC = () => {
     });
   };
 
+  // Função para lidar especificamente com mudanças no campo phone
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    console.log(`Mudança no telefone: ${value}`);
+    setNewBar(prev => ({
+      ...prev,
+      phone: value
+    }));
+  };
+
+  // Corrigir a função handleTagsChange para converter a string de input para array ao armazenar
+  const handleTagsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // Converter a string de input para array antes de armazenar
+    const tagsArray = value ? value.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0) : [];
+    
+    setNewBar(prev => ({
+      ...prev,
+      tags: tagsArray
+    }));
+  };
+
+  const handleRatingChange = (value: number) => {
+    setNewBar(prev => ({
+      ...prev,
+      rating: value
+    }));
+  };
+
+  // Efeito para carregar dados do localStorage com uma abordagem mais robusta
+  useEffect(() => {
+    // Load saved state from local storage on component mount
+    try {
+      const savedBar = localStorage.getItem('newBar');
+      const savedEvent = localStorage.getItem('newEvent');
+      const savedHoursData = localStorage.getItem('hoursData');
+      const savedIsEditMode = localStorage.getItem('isEditMode');
+      const savedCurrentBarId = localStorage.getItem('currentBarId');
+      const savedImagePreview = localStorage.getItem('imagePreview');
+      const savedEventImagePreview = localStorage.getItem('eventImagePreview');
+      const savedAdditionalImagePreviews = localStorage.getItem('additionalImagePreviews');
+
+      console.log('Loaded from localStorage:', { 
+        savedBar, 
+        savedEvent, 
+        savedHoursData, 
+        savedIsEditMode,
+        savedCurrentBarId,
+        savedImagePreview,
+        savedEventImagePreview,
+        savedAdditionalImagePreviews
+      });
+
+      if (savedBar) {
+        const parsedBar = JSON.parse(savedBar);
+        // Garantir que phone e outras propriedades existam
+        if (parsedBar) {
+          setNewBar({
+            ...parsedBar,
+            phone: parsedBar.phone || '',
+            // Garantir que rating seja 4.5 se não existir
+            rating: parsedBar.rating ?? 4.5
+          });
+        }
+      }
+      
+      if (savedEvent) setNewEvent(JSON.parse(savedEvent));
+      if (savedHoursData) setHoursData(JSON.parse(savedHoursData));
+      if (savedIsEditMode) setIsEditMode(JSON.parse(savedIsEditMode));
+      if (savedCurrentBarId) setCurrentBarId(JSON.parse(savedCurrentBarId));
+      if (savedImagePreview) setImagePreview(JSON.parse(savedImagePreview));
+      if (savedEventImagePreview) setEventImagePreview(JSON.parse(savedEventImagePreview));
+      if (savedAdditionalImagePreviews) setAdditionalImagePreviews(JSON.parse(savedAdditionalImagePreviews));
+    } catch (error) {
+      console.error('Erro ao carregar dados do localStorage:', error);
+      // Em caso de erro, limpar localStorage para evitar problemas futuros
+      localStorage.removeItem('newBar');
+      localStorage.removeItem('newEvent');
+      localStorage.removeItem('hoursData');
+      localStorage.removeItem('isEditMode');
+      localStorage.removeItem('currentBarId');
+      localStorage.removeItem('imagePreview');
+      localStorage.removeItem('eventImagePreview');
+      localStorage.removeItem('additionalImagePreviews');
+    }
+  }, []);
+
+  // Efeito para salvar dados no localStorage quando mudam
+  useEffect(() => {
+    // Save state to local storage whenever it changes
+    try {
+      console.log('Saving to localStorage:', { 
+        newBar, 
+        newEvent, 
+        hoursData, 
+        isEditMode, 
+        currentBarId,
+        imagePreview,
+        eventImagePreview,
+        additionalImagePreviews
+      });
+      
+      localStorage.setItem('newBar', JSON.stringify(newBar));
+      localStorage.setItem('newEvent', JSON.stringify(newEvent));
+      localStorage.setItem('hoursData', JSON.stringify(hoursData));
+      localStorage.setItem('isEditMode', JSON.stringify(isEditMode));
+      localStorage.setItem('currentBarId', JSON.stringify(currentBarId));
+      localStorage.setItem('imagePreview', JSON.stringify(imagePreview));
+      localStorage.setItem('eventImagePreview', JSON.stringify(eventImagePreview));
+      localStorage.setItem('additionalImagePreviews', JSON.stringify(additionalImagePreviews));
+    } catch (error) {
+      console.error('Erro ao salvar dados no localStorage:', error);
+    }
+  }, [
+    newBar, 
+    newEvent, 
+    hoursData, 
+    isEditMode, 
+    currentBarId, 
+    imagePreview, 
+    eventImagePreview, 
+    additionalImagePreviews
+  ]);
+
   return (
     <div className="min-h-screen flex flex-col bg-black text-white">
       <Navbar />
@@ -956,7 +1232,7 @@ const Admin: React.FC = () => {
                     <li>Os vídeos serão exibidos como miniaturas clicáveis que abrirão em um player</li>
                   </ul>
                 </div>
-              <form onSubmit={addOrUpdateBar} className="space-y-4 max-w-full">
+              <form id="add-bar-form" onSubmit={addOrUpdateBar} className="space-y-4 max-w-full">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm text-white/70 mb-1 block">Nome do Bar</label>
@@ -1002,8 +1278,8 @@ const Admin: React.FC = () => {
                         <Input
                           name="phone"
                           placeholder="(11) 9999-9999"
-                          value={newBar.phone}
-                          onChange={handleBarChange}
+                          value={newBar.phone || ''}
+                          onChange={handlePhoneChange}
                           className="bg-nightlife-950 border-white/20"
                         />
                       </div>
@@ -1277,13 +1553,19 @@ const Admin: React.FC = () => {
                     <div>
                       <label className="text-sm text-white/70 mb-1 block">Avaliação (1-5)</label>
                       <Input
+                        id="rating"
                         name="rating"
-                        type="number"
-                        min="1"
+                        min="0"
                         max="5"
                         step="0.1"
                         value={newBar.rating}
-                        onChange={handleBarChange}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setNewBar(prev => ({
+                            ...prev,
+                            rating: parseFloat(value)
+                          }));
+                        }}
                         required
                         className="bg-nightlife-950 border-white/20"
                       />
@@ -1342,10 +1624,9 @@ const Admin: React.FC = () => {
                     <label className="text-sm text-white/70 mb-1 block">Tags (separadas por vírgula)</label>
                     <Input
                       name="tags"
-                      placeholder="rock, happy hour, samba..."
-                      value={newBar.tags}
-                      onChange={handleBarChange}
-                      required
+                      value={Array.isArray(newBar.tags) ? newBar.tags.join(', ') : ''}
+                      placeholder="Separe as tags por vírgula (máximo 4)"
+                      onChange={handleTagsChange}
                       className="bg-nightlife-950 border-white/20"
                     />
                     <p className="text-xs text-white/50 mt-1">
@@ -1409,7 +1690,7 @@ const Admin: React.FC = () => {
                         <Input
                           type="text"
                           value={newBar.eventPhone1 || ''}
-                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone1', value: e.target.value } })}
+                          onChange={(e) => setNewBar(prev => ({...prev, eventPhone1: e.target.value}))}
                           placeholder="Ex: +559 9999-9999"
                           className="bg-nightlife-950 border-white/20"
                         />
@@ -1466,7 +1747,7 @@ const Admin: React.FC = () => {
                         <Input
                           type="text"
                           value={newBar.eventPhone2 || ''}
-                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone2', value: e.target.value } })}
+                          onChange={(e) => setNewBar(prev => ({...prev, eventPhone2: e.target.value}))}
                           placeholder="Ex: +559 9999-9999"
                           className="bg-nightlife-950 border-white/20"
                         />
@@ -1523,7 +1804,7 @@ const Admin: React.FC = () => {
                         <Input
                           type="text"
                           value={newBar.eventPhone3 || ''}
-                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone3', value: e.target.value } })}
+                          onChange={(e) => setNewBar(prev => ({...prev, eventPhone3: e.target.value}))}
                           placeholder="Ex: +559 9999-9999"
                           className="bg-nightlife-950 border-white/20"
                         />
@@ -1580,7 +1861,7 @@ const Admin: React.FC = () => {
                         <Input
                           type="text"
                           value={newBar.eventPhone4 || ''}
-                          onChange={(e) => handleBarChange({ target: { name: 'eventPhone4', value: e.target.value } })}
+                          onChange={(e) => setNewBar(prev => ({...prev, eventPhone4: e.target.value}))}
                           placeholder="Ex: +559 9999-9999"
                           className="bg-nightlife-950 border-white/20"
                         />

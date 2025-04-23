@@ -1,5 +1,6 @@
 import React from 'react';
 import { Beer, Instagram, Phone } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const Footer: React.FC = () => {
   return (
@@ -43,7 +44,7 @@ const Footer: React.FC = () => {
           <div>
             <h3 className="text-white font-semibold mb-4">Explorar</h3>
             <ul className="space-y-2">
-              <li><a href="#featured" className="text-white/60 hover:text-white transition-colors text-sm">Bares</a></li>
+              <li><Link to="/bares" className="text-white/60 hover:text-white transition-colors text-sm">Bares e Restaurantes</Link></li>
             </ul>
           </div>
           
