@@ -1,3 +1,74 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+@import './styles/animations.css';
+
+/* Variáveis globais de cores */
+:root {
+  --nightlife-50: #f0fdfb;
+  --nightlife-100: #ccfbf4;
+  --nightlife-200: #99f7e9;
+  --nightlife-300: #5cebdb;
+  --nightlife-400: #2cd9c8;
+  --nightlife-500: #14bbad;
+  --nightlife-600: #0d9a90;
+  --nightlife-700: #107976;
+  --nightlife-800: #12605e;
+  --nightlife-900: #134e4d;
+  --nightlife-950: #042f2f;
+}
+
+/* Estilos globais otimizados para performance */
+body {
+  background-color: black;
+  color: white;
+  /* Impede flash branco durante carregamento */
+  transition: background-color 0.3s;
+  font-display: swap;
+}
+
+/* Otimização de fonte para performance - evita layout shift */
+body, html {
+  text-rendering: optimizeSpeed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+/* Prevenir Content Layout Shift (CLS) para imagens */
+img {
+  max-width: 100%;
+  display: block;
+  height: auto;
+  aspect-ratio: attr(width) / attr(height);
+}
+
+/* Classe para optimizar as animações usando o GPU */
+.gpu-accelerated {
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Carregamento otimizado de conteúdo para prevenir CLS */
+.image-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.image-container::before {
+  content: "";
+  display: block;
+  padding-top: 56.25%; /* Proporção 16:9 */
+}
+
+.image-container img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 
 @tailwind base;
 @tailwind components;

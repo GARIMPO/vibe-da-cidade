@@ -1,15 +1,11 @@
-import React from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Index from '@/pages/Index';
-import AllBars from '@/pages/AllBars';
-import Admin from '@/pages/Admin';
-import Login from '@/pages/Login';
 import { Toaster } from '@/components/ui/toaster';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import PrivacyPolicy from './pages/PrivacyPolicy';
-import TermsOfService from './pages/TermsOfService';
 import CookieConsent from '@/components/CookieConsent';
+import LoadingScreen from '@/components/LoadingScreen';
+import { preloadCommonImages } from '@/lib/preloadImages';
 
 // Criar o cliente do React Query com configurações melhoradas
 const queryClient = new QueryClient({
@@ -25,25 +21,63 @@ const queryClient = new QueryClient({
   },
 });
 
+// Lazy loading para componentes pesados
+const Index = lazy(() => import('@/pages/Index'));
+const AllBars = lazy(() => import('@/pages/AllBars'));
+const Admin = lazy(() => import('@/pages/Admin'));
+const Login = lazy(() => import('@/pages/Login'));
+const Register = lazy(() => import('@/pages/Register'));
+const Marketing = lazy(() => import('@/pages/Marketing'));
+const PrivacyPolicy = lazy(() => import('@/pages/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('@/pages/TermsOfService'));
+const BarStats = lazy(() => import('@/components/BarStats'));
+const NotFound = lazy(() => import('@/pages/NotFound'));
+
 const App: React.FC = () => {
+  // Pré-carregar imagens comuns quando o app iniciar
+  useEffect(() => {
+    // Iniciar o pré-carregamento de imagens de alta prioridade
+    preloadCommonImages(1);
+    
+    // Programar o carregamento de imagens de menor prioridade para mais tarde
+    const timer = setTimeout(() => {
+      preloadCommonImages(2);
+    }, 2000);
+    
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/bares" element={<AllBars />} />
-          <Route 
-            path="/admin" 
-            element={
-              <ProtectedRoute>
-                <Admin />
-              </ProtectedRoute>
-            } 
-          />
-          <Route path="/login" element={<Login />} />
-          <Route path="/privacidade" element={<PrivacyPolicy />} />
-          <Route path="/termos" element={<TermsOfService />} />
-        </Routes>
+        <Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/bares" element={<AllBars />} />
+            <Route 
+              path="/admin" 
+              element={
+                <ProtectedRoute>
+                  <Admin />
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/marketing" element={<Marketing />} />
+            <Route path="/privacidade" element={<PrivacyPolicy />} />
+            <Route path="/termos" element={<TermsOfService />} />
+            <Route 
+              path="/bar-stats" 
+              element={
+                <ProtectedRoute>
+                  <BarStats />
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
         <CookieConsent />
       </Router>
       <Toaster />

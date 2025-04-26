@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabase';
 
 interface BarCardProps {
   name: string;
@@ -25,6 +26,8 @@ interface BarCardProps {
   instagram?: string;
   facebook?: string;
   id: string;
+  discount_code?: string;
+  discount_description?: string;
 }
 
 // Função para truncar descrições para exibição no card
@@ -231,10 +234,12 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
   phone,
   instagram,
   facebook,
-  id
+  id,
+  discount_code,
+  discount_description
 }, ref) => {
   const isMobile = useIsMobile();
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [currentImage, setCurrentImage] = useState(image);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
@@ -244,11 +249,48 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
   // Log para debug - mostrar o ID do bar atual
   console.log(`BarCard ID: ${id}, Tipo: ${typeof id}`);
   
-  // Expose the openDetails method via ref
-  useImperativeHandle(ref, () => ({
-    openDetails: () => {
-      setDetailsOpen(true);
+  // Função para incrementar o contador de visualizações
+  const incrementViewCount = async () => {
+    try {
+      // Verificar se já existe um registro para este bar
+      const { data: existingData } = await supabase
+        .from('bar_views')
+        .select('*')
+        .eq('bar_id', id)
+        .single();
+      
+      if (existingData) {
+        // Atualizar o contador existente
+        await supabase
+          .from('bar_views')
+          .update({ 
+            view_count: existingData.view_count + 1,
+            last_viewed: new Date().toISOString()
+          })
+          .eq('bar_id', id);
+      } else {
+        // Criar um novo registro
+        await supabase
+          .from('bar_views')
+          .insert({ 
+            bar_id: id,
+            view_count: 1
+          });
+      }
+    } catch (error) {
+      console.error('Erro ao incrementar contador de visualizações:', error);
     }
+  };
+  
+  // Função para abrir o modal de detalhes
+  const openDetails = () => {
+    setIsDetailsOpen(true);
+    incrementViewCount(); // Incrementar o contador quando o modal é aberto
+  };
+  
+  // Expor a função openDetails para o ref
+  useImperativeHandle(ref, () => ({
+    openDetails
   }));
 
   // Atualizar o horário atual a cada minuto
@@ -271,12 +313,12 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
   
   // Reset current image when closing the dialog
   useEffect(() => {
-    if (!detailsOpen) {
+    if (!isDetailsOpen) {
       setCurrentImage(image);
       setVideoModalOpen(false);
       setCurrentVideoUrl(null);
     }
-  }, [detailsOpen, image]);
+  }, [isDetailsOpen, image]);
   
   // Função para extrair o ID do vídeo do YouTube
   const getYoutubeVideoId = (url: string): string | null => {
@@ -406,7 +448,7 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
           )}
           
             <button 
-              onClick={() => setDetailsOpen(true)}
+              onClick={openDetails}
               className="w-full mt-5 py-2.5 bg-nightlife-600 hover:bg-nightlife-700 text-white rounded-lg transition-colors text-base font-medium"
             >
             Ver Detalhes
@@ -415,7 +457,7 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
       </div>
     </div>
 
-      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
         <DialogContent className="sm:max-w-[600px] bg-black/95 border-white/10 text-white max-h-[90vh] overflow-y-auto">
           <DialogHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -458,44 +500,64 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
                 )}
 
                 {/* Adicionar opção de compartilhar */}
-                <div className="flex justify-start mt-3">
-                  <a 
-                    href={(() => {
-                      // Garantir que o ID seja válido
-                      if (!id) {
-                        console.error('ID inválido para compartilhamento:', id);
-                        return '#';
-                      }
-                      
-                      // Log para depuração
-                      console.log(`Criando link de compartilhamento para bar ${name} com ID: [${id}]`);
-                      
-                      // Construir a URL completa para compartilhamento
-                      const shareUrl = `${window.location.origin}/bares?bar=${encodeURIComponent(id)}`;
-                      const shareText = `Confira este lugar incrível: ${name}\n${location}\n\nClique no link para ver detalhes: ${shareUrl}`;
-                      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
-                      
-                      console.log("URL de compartilhamento:", shareUrl);
-                      return whatsappUrl;
-                    })()}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-nightlife-950/50 text-white border border-nightlife-700/50 px-3 py-1 rounded-md hover:bg-nightlife-800/50 transition-colors flex items-center gap-1.5"
-                    onClick={(e) => {
-                      // Verificar se o ID é válido antes de compartilhar
-                      if (!id) {
-                        e.preventDefault();
-                        console.error('Erro: Tentativa de compartilhar bar com ID inválido:', id);
-                        alert('Não foi possível compartilhar este bar. ID inválido.');
-                      } else {
-                        console.log('Compartilhando bar com ID:', id);
-                      }
+                <div className="flex items-center gap-2 mt-2">
+                  <Share2 className="w-4 h-4 text-nightlife-400" />
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}${window.location.pathname}?bar=${id}`;
+                      navigator.clipboard.writeText(url);
                     }}
+                    className="text-white/70 hover:text-white transition-colors text-sm"
                   >
-                    <Share2 className="w-4 h-4" />
                     Compartilhar
-                  </a>
+                  </button>
                 </div>
+
+                {/* Botão Ver eventos - só aparece se houver eventos */}
+                {events.length > 0 && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <Calendar className="w-4 h-4 text-nightlife-400" />
+                    <button
+                      onClick={() => {
+                        // Encontrar o elemento de eventos e rolar até ele
+                        const eventsSection = document.getElementById(`events-${id}`);
+                        if (eventsSection) {
+                          eventsSection.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }}
+                      className="text-white/70 hover:text-white transition-colors text-sm"
+                    >
+                      Ver eventos
+                    </button>
+                  </div>
+                )}
+
+                {/* Exibir cupom de desconto se existir */}
+                {(discount_code || discount_description) && (
+                  <div className="mt-4 mb-4 p-4 bg-green-600/20 border border-green-500/30 rounded-lg">
+                    <div className="flex flex-col gap-3">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <span className="text-green-400 font-medium whitespace-nowrap">Código do cupom:</span>
+                          {discount_code && (
+                            <div className="text-white/80 text-sm">{discount_code}</div>
+                          )}
+                        </div>
+                        {discount_description && (
+                          <div className="flex flex-col gap-2 w-full sm:w-auto">
+                            <div className="flex items-center gap-2">
+                              <span className="text-green-400 font-medium whitespace-nowrap">Desconto em:</span>
+                              <div className="text-white/80 text-sm font-bold">{discount_description}</div>
+                            </div>
+                            <div className="text-white/90 text-sm italic">
+                              Apresentando este cupom você terá desconto
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </DialogDescription>
           </DialogHeader>
@@ -576,10 +638,16 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
                       const dayNames = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
                       const isCurrentDay = line.toLowerCase().includes(dayNames[dayOfWeek]);
                       
+                      // Em vez de aplicar a classe na linha inteira, vamos formatar apenas a palavra "FECHADO"
+                      let formattedLine = line;
+                      if (line.toUpperCase().includes('FECHADO')) {
+                        formattedLine = line.replace(/FECHADO/i, '<span class="text-red-500">FECHADO</span>');
+                      }
+                      
                       return line.trim() && (
                         <li key={idx} className={isCurrentDay ? 'text-white font-medium' : ''}>
                           {isCurrentDay && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 mr-1 animate-pulse"></span>}
-                          {line}
+                          <span dangerouslySetInnerHTML={{ __html: formattedLine }} />
                           {isCurrentDay && isOpen && <span className="ml-1 text-green-400 text-xs">(Aberto agora)</span>}
                           {isCurrentDay && !isOpen && <span className="ml-1 text-red-400 text-xs">(Fechado agora)</span>}
                         </li>
@@ -658,7 +726,7 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
             </div>
 
             {events.length > 0 && (
-              <div className="mb-4">
+              <div id={`events-${id}`} className="mb-4">
                 <h3 className="text-base font-semibold mb-2 flex items-center gap-1">
                   <Calendar className="w-4 h-4 text-nightlife-400" />
                   Próximos Eventos
@@ -719,7 +787,7 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
             <div className="flex justify-between items-center gap-2 mt-3">
               <p className="text-white/70 text-xs">Feito por Garimpo de Ofertas</p>
               <button 
-                onClick={() => setDetailsOpen(false)}
+                onClick={() => setIsDetailsOpen(false)}
                 className="px-3 py-1.5 bg-nightlife-600 hover:bg-nightlife-700 text-white rounded-md transition-colors text-xs"
               >
                 Fechar

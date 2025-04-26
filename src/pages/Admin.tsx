@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { supabase, uploadImage } from '@/lib/supabase';
+import React, { useState, useRef, useEffect, Fragment } from 'react';
+import { supabase, uploadImage, deleteImage, cleanupUnusedImages } from '@/lib/supabase';
 import { useBars, useEvents } from '@/hooks/use-supabase-data';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
@@ -9,11 +9,29 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Upload, Image as ImageIcon, X } from 'lucide-react';
+import { ArrowLeft, Upload, Image as ImageIcon, X, User as UserIcon, UserPlus, Lock, UserX, Check, Eye } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import Navbar from '@/components/Navbar';
 import CoverImageConfig from '@/components/CoverImageConfig';
 import MapsLinkConfig from '@/components/MapsLinkConfig';
+import { useQuery } from '@tanstack/react-query';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import ShareRegistrationLink from '@/components/ShareRegistrationLink';
+import { Label } from '@/components/ui/label';
+import { Link } from 'react-router-dom';
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose,
+} from "@/components/ui/dialog";
 
 // Interface para os dados do bar
 interface Bar {
@@ -37,6 +55,8 @@ interface Bar {
   facebook?: string;
   hours?: string;
   user_id?: string;
+  discount_code?: string;
+  discount_description?: string;
   eventName1?: string;
   eventDate1?: string;
   eventYoutubeUrl1?: string;
@@ -54,6 +74,21 @@ interface Bar {
   eventYoutubeUrl4?: string;
   eventPhone4?: string;
 }
+
+// Interface para usuários do sistema
+interface User {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  address?: string;
+  role: UserRole;
+  approved: boolean;
+  created_at?: string;
+}
+
+// Tipos de role de usuário
+type UserRole = 'super_admin' | 'client' | 'user';
 
 // Interface para os dados de evento
 interface Event {
@@ -100,15 +135,15 @@ const isValidYoutubeUrl = (url: string): boolean => {
 };
 
 // Função para analisar o texto de horas e extrair valores para a interface
-const parseHoursText = (hoursText?: string): {[key: string]: {open: string, close: string}} => {
+const parseHoursText = (hoursText?: string): {[key: string]: {open: string, close: string, closed?: boolean}} => {
   const defaultHours = {
-    'seg': { open: '18:00', close: '00:00' },
-    'ter': { open: '18:00', close: '00:00' },
-    'qua': { open: '18:00', close: '00:00' },
-    'qui': { open: '18:00', close: '00:00' },
-    'sex': { open: '18:00', close: '02:00' },
-    'sab': { open: '18:00', close: '02:00' },
-    'dom': { open: '16:00', close: '22:00' }
+    'seg': { open: '18:00', close: '00:00', closed: false },
+    'ter': { open: '18:00', close: '00:00', closed: false },
+    'qua': { open: '18:00', close: '00:00', closed: false },
+    'qui': { open: '18:00', close: '00:00', closed: false },
+    'sex': { open: '18:00', close: '02:00', closed: false },
+    'sab': { open: '18:00', close: '02:00', closed: false },
+    'dom': { open: '16:00', close: '22:00', closed: false }
   };
   
   if (!hoursText) return defaultHours;
@@ -118,6 +153,38 @@ const parseHoursText = (hoursText?: string): {[key: string]: {open: string, clos
   
   for (const line of lines) {
     if (!line.trim()) continue;
+    
+    // Verificar se contém "FECHADO" explícito no texto
+    if (line.toLowerCase().includes('fechado')) {
+      // Separar o dia (formato típico: "Segunda: FECHADO")
+      const parts = line.split(':');
+      if (parts.length < 1) continue;
+      
+      const dayText = parts[0].toLowerCase().trim();
+      
+      // Identificar o dia da semana
+      let dayKey = '';
+      if (dayText.includes('segunda')) {
+        dayKey = 'seg';
+      } else if (dayText.includes('terça') || dayText.includes('terca')) {
+        dayKey = 'ter';
+      } else if (dayText.includes('quarta')) {
+        dayKey = 'qua';
+      } else if (dayText.includes('quinta')) {
+        dayKey = 'qui';
+      } else if (dayText.includes('sexta')) {
+        dayKey = 'sex';
+      } else if (dayText.includes('sábado') || dayText.includes('sabado')) {
+        dayKey = 'sab';
+      } else if (dayText.includes('domingo')) {
+        dayKey = 'dom';
+      }
+      
+      if (dayKey) {
+        result[dayKey].closed = true;
+      }
+      continue;
+    }
     
     // Separar o dia e o horário (formato típico: "Segunda: 18:00 - 00:00")
     const parts = line.split(':');
@@ -152,7 +219,8 @@ const parseHoursText = (hoursText?: string): {[key: string]: {open: string, clos
         const [, openHour, openMin, closeHour, closeMin] = timeMatch;
         result[dayKey] = {
           open: `${openHour.padStart(2, '0')}:${openMin}`,
-          close: `${closeHour.padStart(2, '0')}:${closeMin}`
+          close: `${closeHour.padStart(2, '0')}:${closeMin}`,
+          closed: false
         };
       }
     }
@@ -161,9 +229,26 @@ const parseHoursText = (hoursText?: string): {[key: string]: {open: string, clos
   return result;
 };
 
+// Define types for hours data
+interface DayHour {
+  open: string;
+  close: string;
+  closed: boolean;
+}
+
+interface HoursData {
+  seg: DayHour;
+  ter: DayHour;
+  qua: DayHour;
+  qui: DayHour;
+  sex: DayHour;
+  sab: DayHour;
+  dom: DayHour;
+}
+
 // Função para formatar os valores de horas para o formato esperado pelo isBarOpen
-const formatHoursForSave = (hoursData: {[key: string]: {open: string, close: string}}): string => {
-  const dayNames = {
+const formatHoursForSave = (hoursData: HoursData): string => {
+  const dayNames: Record<keyof HoursData, string> = {
     'seg': 'Segunda',
     'ter': 'Terça',
     'qua': 'Quarta',
@@ -175,9 +260,14 @@ const formatHoursForSave = (hoursData: {[key: string]: {open: string, close: str
   
   const lines = [];
   
-  for (const dayKey of Object.keys(hoursData)) {
-    if (hoursData[dayKey] && hoursData[dayKey].open && hoursData[dayKey].close) {
-      lines.push(`${dayNames[dayKey as keyof typeof dayNames]}: ${hoursData[dayKey].open} - ${hoursData[dayKey].close}`);
+  for (const dayKey of Object.keys(dayNames) as Array<keyof HoursData>) {
+    const dayData = hoursData[dayKey];
+    if (dayData) {
+      if (dayData.closed) {
+        lines.push(`${dayNames[dayKey]}: FECHADO`);
+      } else if (dayData.open && dayData.close) {
+        lines.push(`${dayNames[dayKey]}: ${dayData.open} - ${dayData.close}`);
+      }
     }
   }
   
@@ -199,11 +289,46 @@ class DirectSubmitController {
   }
 }
 
+// Hook para buscar usuários no Supabase
+function useUsers() {
+  const { user } = useAuth();
+  
+  return useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      if (!user || user.role !== 'super_admin') {
+        return null;
+      }
+      
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .neq('role', 'super_admin') // Filtrar para não incluir super_admin
+        .order('created_at', { ascending: false });
+        
+      if (error) throw error;
+      return data as User[];
+    },
+    enabled: !!user && user.role === 'super_admin',
+  });
+}
+
+// Define the readFileAsDataURL function
+const readFileAsDataURL = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
 const Admin: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: bars } = useBars();
   const { data: events } = useEvents();
+  const { data: users } = useUsers();
   const { user } = useAuth();
   const isSuperAdmin = user?.role === 'super_admin';
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -220,15 +345,32 @@ const Admin: React.FC = () => {
   const [eventImagePreview, setEventImagePreview] = useState<string | null>(null);
   const [additionalImagePreviews, setAdditionalImagePreviews] = useState<(string | null)[]>([null, null, null]);
   
+  // Estados para gerenciamento de usuários
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [deleteUserDialogOpen, setDeleteUserDialogOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [newUser, setNewUser] = useState<Partial<User>>({
+    email: '',
+    name: '',
+    phone: '',
+    role: 'user',
+    approved: false
+  });
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
+  const [resetPasswordEmail, setResetPasswordEmail] = useState('');
+  const [userManagementExpanded, setUserManagementExpanded] = useState(false);
+  const [statusChangeDialogOpen, setStatusChangeDialogOpen] = useState(false);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{userId: string, status: boolean} | null>(null);
+  
   // Estado para horários estruturados
-  const [hoursData, setHoursData] = useState<{[key: string]: {open: string, close: string}}>({
-    'seg': { open: '18:00', close: '00:00' },
-    'ter': { open: '18:00', close: '00:00' },
-    'qua': { open: '18:00', close: '00:00' },
-    'qui': { open: '18:00', close: '00:00' },
-    'sex': { open: '18:00', close: '02:00' },
-    'sab': { open: '18:00', close: '02:00' },
-    'dom': { open: '16:00', close: '22:00' }
+  const [hoursData, setHoursData] = useState<HoursData>({
+    seg: { open: '', close: '', closed: false },
+    ter: { open: '', close: '', closed: false },
+    qua: { open: '', close: '', closed: false },
+    qui: { open: '', close: '', closed: false },
+    sex: { open: '', close: '', closed: false },
+    sab: { open: '', close: '', closed: false },
+    dom: { open: '', close: '', closed: false },
   });
   
   // Estado para novo bar
@@ -290,6 +432,7 @@ const Admin: React.FC = () => {
 
   // Adicionar novo estado para rastrear as imagens
   const [mainImageFile, setMainImageFile] = useState<File | null>(null);
+  const [eventImageFile, setEventImageFile] = useState<File | null>(null);
   const [additionalImageFiles, setAdditionalImageFiles] = useState<(File | null)[]>([null, null, null]);
 
   // Adicionar um efeito para verificar se a página foi recarregada devido ao aviso
@@ -344,7 +487,6 @@ const Admin: React.FC = () => {
   // Atualizar campos do novo bar
   const handleBarChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    console.log(`Mudança de campo: ${name} = ${value}`);
     setNewBar(prev => ({
       ...prev,
       [name]: value
@@ -376,14 +518,38 @@ const Admin: React.FC = () => {
     });
     setNewBar(prev => ({ ...prev, hours: formattedHours }));
   };
+
+  // Manipular a mudança no checkbox de bar fechado para um dia específico
+  const handleBarClosedChange = (dayKey: keyof HoursData, closed: boolean) => {
+    // Criar uma nova cópia atualizada do estado para usar tanto na atualização do estado quanto na formatação
+    const updatedHoursData = {
+      ...hoursData,
+      [dayKey]: {
+        ...hoursData[dayKey],
+        closed
+      }
+    };
+    
+    // Atualizar o estado com a nova cópia
+    setHoursData(updatedHoursData);
+    
+    // Usar a mesma cópia para formatar e atualizar as horas
+    const formattedHours = formatHoursForSave(updatedHoursData);
+    setNewBar(prev => ({ ...prev, hours: formattedHours }));
+  };
   
   // Obter o valor de hora para um campo específico
-  const getHoursValue = (dayKey: string, field: 'open' | 'close'): string => {
+  const getHoursValue = (dayKey: keyof HoursData, field: 'open' | 'close'): string => {
     return hoursData[dayKey]?.[field] || '';
   };
 
+  // Verificar se um bar está marcado como fechado em um determinado dia
+  const isBarClosed = (dayKey: keyof HoursData): boolean => {
+    return Boolean(hoursData[dayKey]?.closed);
+  };
+
   // Função para fazer upload de imagem para o Supabase Storage
-  const handleImageUpload = async (file: File): Promise<string | null> => {
+  const handleImageUpload = async (file: File, existingUrl?: string): Promise<string | null> => {
     setIsUploading(true);
     setUploadProgress(0);
     
@@ -393,10 +559,10 @@ const Admin: React.FC = () => {
       // Mostrar progresso inicial
       setUploadProgress(10);
       
-      // Fazer upload usando a função centralizada
+      // Fazer upload usando a função centralizada, passando a URL existente para substituição
       const bucketName = activeTab === 'bars' ? 'bar-images' : 'event-images';
       console.log(`Usando bucket: ${bucketName}`);
-      const imageUrl = await uploadImage(file, bucketName);
+      const imageUrl = await uploadImage(file, bucketName, existingUrl);
       
       setUploadProgress(100);
       console.log("Upload concluído com sucesso, URL:", imageUrl);
@@ -428,43 +594,37 @@ const Admin: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Create a data URL from the file for persistence
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      
-      // Store in the appropriate state
+    const dataUrl = await readFileAsDataURL(file);
+    
       if (isEventImage) {
-        setEventImagePreview(URL.createObjectURL(file));
-        // Store the data URL in sessionStorage for retrieval after navigation
-        sessionStorage.setItem('eventImageDataUrl', dataUrl);
+      setEventImageFile(file); // Adicionar esta linha para salvar o arquivo
+      setEventImagePreview(URL.createObjectURL(file));
+      sessionStorage.setItem('eventImageDataUrl', dataUrl);
       } else if (additionalImageIndex !== undefined) {
-        // Save the file for the additional image
-        const newAdditionalFiles = [...additionalImageFiles];
-        newAdditionalFiles[additionalImageIndex] = file;
-        setAdditionalImageFiles(newAdditionalFiles);
-        
-        // Update the preview
-        const objectUrl = URL.createObjectURL(file);
+      // Save the file for the additional image
+      const newAdditionalFiles = [...additionalImageFiles];
+      newAdditionalFiles[additionalImageIndex] = file;
+      setAdditionalImageFiles(newAdditionalFiles);
+      
+      // Update the preview
+      const objectUrl = URL.createObjectURL(file);
         setAdditionalImagePreviews(prev => {
           const newPreviews = [...prev];
-          newPreviews[additionalImageIndex] = objectUrl;
+        newPreviews[additionalImageIndex] = objectUrl;
           return newPreviews;
         });
-        
-        // Store the data URL in sessionStorage
-        const additionalImageDataUrls = JSON.parse(sessionStorage.getItem('additionalImageDataUrls') || '[]');
-        additionalImageDataUrls[additionalImageIndex] = dataUrl;
-        sessionStorage.setItem('additionalImageDataUrls', JSON.stringify(additionalImageDataUrls));
+      
+      // Store the data URL in sessionStorage
+      const additionalImageDataUrls = JSON.parse(sessionStorage.getItem('additionalImageDataUrls') || '[]');
+      additionalImageDataUrls[additionalImageIndex] = dataUrl;
+      sessionStorage.setItem('additionalImageDataUrls', JSON.stringify(additionalImageDataUrls));
       } else {
-        // Save the main image file
-        setMainImageFile(file);
-        setImagePreview(URL.createObjectURL(file));
-        // Store the data URL in sessionStorage
-        sessionStorage.setItem('mainImageDataUrl', dataUrl);
-      }
-    };
-    reader.readAsDataURL(file);
+      // Save the main image file
+      setMainImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
+      // Store the data URL in sessionStorage
+      sessionStorage.setItem('mainImageDataUrl', dataUrl);
+    }
   };
 
   // Iniciar upload de imagem
@@ -567,7 +727,7 @@ const Admin: React.FC = () => {
         if (userBars && userBars.length >= 1) {
           toast({
             title: "Limite de bares",
-            description: "Usuários comuns podem adicionar apenas um bar. Edite o bar existente ou contate um administrador.",
+            description: "Você só pode adicionar apenas um estabelecimento, edite o existente ou contate o administrador.",
             variant: "destructive"
           });
           return;
@@ -578,7 +738,11 @@ const Admin: React.FC = () => {
       
       // Se houver um arquivo selecionado, fazer upload
       if (mainImageFile) {
-        const uploadedUrl = await handleImageUpload(mainImageFile);
+        // Passar a URL existente para substituição se estiver em modo de edição
+        const existingUrl = isEditMode ? newBar.image : undefined;
+        console.log("Substituindo imagem existente:", existingUrl);
+        
+        const uploadedUrl = await handleImageUpload(mainImageFile, existingUrl);
         if (uploadedUrl) {
           imageUrl = uploadedUrl;
         }
@@ -589,7 +753,11 @@ const Admin: React.FC = () => {
       
       for (let i = 0; i < 3; i++) {
         if (additionalImageFiles[i]) {
-          const uploadedUrl = await handleImageUpload(additionalImageFiles[i]!);
+          // Passar a URL existente para substituição se estiver em modo de edição
+          const existingUrl = isEditMode && i < additionalImages.length ? additionalImages[i] : undefined;
+          console.log(`Substituindo imagem adicional ${i}:`, existingUrl);
+          
+          const uploadedUrl = await handleImageUpload(additionalImageFiles[i]!, existingUrl);
           if (uploadedUrl) {
             // Se já existe uma imagem nessa posição, substitui; caso contrário, adiciona
             if (i < additionalImages.length) {
@@ -602,27 +770,11 @@ const Admin: React.FC = () => {
       }
       
       // Preparar os dados para salvar
-      const barData: {
-        name: string;
-        location: string;
-        maps_url?: string;
-        description: string;
-        rating: number;
-        image: string;
-        additional_images: string[];
-        tags: string[];
-        events: { name: string; date: string; youtube_url?: string; phone?: string }[];
-        phone?: string;
-        instagram?: string;
-        facebook?: string;
-        hours?: string;
-        user_id?: string;
-      } = {
+      const barData = {
         name: newBar.name,
         location: newBar.location,
-        maps_url: newBar.maps_url,
         description: newBar.description,
-        rating: parseFloat(newBar.rating.toString()),
+        rating: newBar.rating,
         image: imageUrl || 'https://images.unsplash.com/photo-1514933651103-005eec06c04b',
         additional_images: additionalImages,
         tags: processedTags,
@@ -632,10 +784,14 @@ const Admin: React.FC = () => {
           { name: newBar.eventName3 || '', date: newBar.eventDate3 || '', youtube_url: newBar.eventYoutubeUrl3, phone: newBar.eventPhone3 },
           { name: newBar.eventName4 || '', date: newBar.eventDate4 || '', youtube_url: newBar.eventYoutubeUrl4, phone: newBar.eventPhone4 }
         ].filter(event => event.name && event.date),
+        maps_url: newBar.maps_url,
         phone: newBar.phone,
         instagram: newBar.instagram,
         facebook: newBar.facebook,
-        hours: formatHoursForSave(hoursData)
+        hours: formatHoursForSave(hoursData),
+        discount_code: newBar.discount_code,
+        discount_description: newBar.discount_description,
+        user_id: user?.id
       };
       
       // Adicionar user_id ao criar novo bar (não ao editar)
@@ -646,77 +802,79 @@ const Admin: React.FC = () => {
       console.log('Enviando dados do bar:', barData);
       
       try {
-        let result;
-        
-        if (isEditMode && currentBarId) {
-          // Atualizar bar existente
-          result = await supabase
-            .from('bars')
-            .update(barData)
-            .eq('id', currentBarId)
-            .select();
-            
+      let result;
+      
+      if (isEditMode && currentBarId) {
+        // Atualizar bar existente
+        result = await supabase
+          .from('bars')
+          .update(barData)
+          .eq('id', currentBarId)
+          .select();
+          
           if (result.error) {
             console.error("Erro ao atualizar bar:", result.error);
             throw result.error;
           }
+        
+        toast({
+          title: "Bar atualizado",
+          description: `${barData.name} foi atualizado com sucesso.`
+        });
+        
+      } else {
+        // Inserir novo bar
+        result = await supabase
+          .from('bars')
+          .insert(barData)
+          .select();
           
-          toast({
-            title: "Bar atualizado",
-            description: `${barData.name} foi atualizado com sucesso.`
-          });
-          
-        } else {
-          // Inserir novo bar
-          result = await supabase
-            .from('bars')
-            .insert(barData)
-            .select();
-            
           if (result.error) {
             console.error("Erro ao inserir bar:", result.error);
             throw result.error;
           }
-          
-          toast({
-            title: "Bar adicionado",
-            description: `${barData.name} foi adicionado com sucesso.`
-          });
-        }
         
-        // Limpar o formulário e atualizar a lista
-        setNewBar({
-          id: 0,
-          name: '',
-          location: '',
-          description: '',
+        toast({
+          title: "Bar adicionado",
+          description: `${barData.name} foi adicionado com sucesso.`
+        });
+      }
+      
+      // Limpar o formulário e atualizar a lista
+      setNewBar({
+        id: 0,
+        name: '',
+        location: '',
+        description: '',
           rating: 4.5, // Avaliação padrão 4.5
-          image: '',
-          additional_images: [],
+        image: '',
+        additional_images: [],
           events: [],
           tags: [],
           maps_url: '',
-          eventName1: '',
-          eventDate1: '',
-          eventYoutubeUrl1: '',
+        eventName1: '',
+        eventDate1: '',
+        eventYoutubeUrl1: '',
           eventPhone1: '',
-          eventName2: '',
-          eventDate2: '',
-          eventYoutubeUrl2: '',
+        eventName2: '',
+        eventDate2: '',
+        eventYoutubeUrl2: '',
           eventPhone2: '',
-          eventName3: '',
-          eventDate3: '',
-          eventYoutubeUrl3: '',
+        eventName3: '',
+        eventDate3: '',
+        eventYoutubeUrl3: '',
           eventPhone3: '',
-          eventName4: '',
-          eventDate4: '',
-          eventYoutubeUrl4: '',
+        eventName4: '',
+        eventDate4: '',
+        eventYoutubeUrl4: '',
           eventPhone4: '',
-          phone: '',
-          instagram: '',
-          facebook: '',
-          hours: ''
-        });
+        phone: '',
+        instagram: '',
+        facebook: '',
+        hours: '',
+        discount_code: '',
+        discount_description: ''
+      });
         
         // Limpar o localStorage após salvamento bem-sucedido
         localStorage.removeItem('newBar');
@@ -724,27 +882,27 @@ const Admin: React.FC = () => {
         localStorage.removeItem('currentBarId');
         localStorage.removeItem('imagePreview');
         localStorage.removeItem('additionalImagePreviews');
+      
+      // Limpar previews de imagem
+      setImagePreview(null);
+      setAdditionalImagePreviews([null, null, null]);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      additionalFileInputRefs.current.forEach(ref => {
+        if (ref) ref.value = '';
+      });
+      
+      // Atualizar a lista de bares
+      queryClient.invalidateQueries({ queryKey: ['bars'] });
+      queryClient.refetchQueries({ queryKey: ['bars'] });
         
-        // Limpar previews de imagem
-        setImagePreview(null);
-        setAdditionalImagePreviews([null, null, null]);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        additionalFileInputRefs.current.forEach(ref => {
-          if (ref) ref.value = '';
-        });
-        
-        // Atualizar a lista de bares
+      setIsEditMode(false);
+      setCurrentBarId(null);
+      
+      // Aguardar um pouco e fazer uma segunda tentativa de atualizar a lista
+      setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['bars'] });
         queryClient.refetchQueries({ queryKey: ['bars'] });
-        
-        setIsEditMode(false);
-        setCurrentBarId(null);
-        
-        // Aguardar um pouco e fazer uma segunda tentativa de atualizar a lista
-        setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: ['bars'] });
-          queryClient.refetchQueries({ queryKey: ['bars'] });
-        }, 1000);
+      }, 1000);
       } catch (supabaseError) {
         console.error("Erro do Supabase:", supabaseError);
         toast({
@@ -768,9 +926,6 @@ const Admin: React.FC = () => {
     sessionStorage.removeItem('additionalImagePreviews');
     sessionStorage.removeItem('currentBarData');
     sessionStorage.removeItem('imageStateSaved');
-    
-    // Reset form and update state
-    clearBarForm();
   };
 
   // Adicionar novo evento
@@ -786,11 +941,14 @@ const Admin: React.FC = () => {
     }
     
     try {
-      let imageUrl = newEvent.image;
+      let imageUrl = newEvent.image || '';
       
-      // Se houver um arquivo selecionado, fazer upload
-      if (eventFileInputRef.current?.files?.length) {
-        const uploadedUrl = await handleImageUpload(eventFileInputRef.current.files[0]);
+      if (eventImageFile) {
+        // Passar a URL existente para substituição se estiver editando um evento existente
+        const existingUrl = newEvent.id ? newEvent.image : undefined;
+        console.log("Substituindo imagem do evento:", existingUrl);
+        
+        const uploadedUrl = await handleImageUpload(eventImageFile, existingUrl);
         if (uploadedUrl) {
           imageUrl = uploadedUrl;
         }
@@ -829,6 +987,7 @@ const Admin: React.FC = () => {
       
       // Limpar previews de imagem
       setEventImagePreview(null);
+      setEventImageFile(null);
       if (eventFileInputRef.current) eventFileInputRef.current.value = '';
       
       // Atualizar a lista de eventos
@@ -858,40 +1017,42 @@ const Admin: React.FC = () => {
 
   // Iniciar edição de bar
   const startEditBar = (bar: Bar) => {
-    // Converter tags para string se for array
-    const tagsAsString = Array.isArray(bar.tags) ? bar.tags.join(', ') : (bar.tags || '');
-    
     setNewBar({
-      ...bar,
-      // Garantir que tags seja convertido para string, independentemente do tipo original
-      tags: tagsAsString,
-      eventName1: bar.events?.[0]?.name || '',
-      eventDate1: bar.events?.[0]?.date || '',
-      eventYoutubeUrl1: bar.events?.[0]?.youtube_url || '',
-      eventPhone1: bar.events?.[0]?.phone || '',
-      eventName2: bar.events?.[1]?.name || '',
-      eventDate2: bar.events?.[1]?.date || '',
-      eventYoutubeUrl2: bar.events?.[1]?.youtube_url || '',
-      eventPhone2: bar.events?.[1]?.phone || '',
-      eventName3: bar.events?.[2]?.name || '',
-      eventDate3: bar.events?.[2]?.date || '',
-      eventYoutubeUrl3: bar.events?.[2]?.youtube_url || '',
-      eventPhone3: bar.events?.[2]?.phone || '',
-      eventName4: bar.events?.[3]?.name || '',
-      eventDate4: bar.events?.[3]?.date || '',
-      eventYoutubeUrl4: bar.events?.[3]?.youtube_url || '',
-      eventPhone4: bar.events?.[3]?.phone || '',
+      id: bar.id,
+      name: bar.name,
+      location: bar.location,
+      description: bar.description,
+      rating: bar.rating,
+      image: bar.image,
+      additional_images: bar.additional_images || [],
+      tags: bar.tags,
+      maps_url: bar.maps_url || '',
+      phone: bar.phone || '',
+      instagram: bar.instagram || '',
+      facebook: bar.facebook || '',
+      hours: bar.hours || '',
+      discount_code: bar.discount_code || '',
+      discount_description: bar.discount_description || '',
+      events: bar.events || [],
+      eventName1: bar.events[0]?.name || '',
+      eventDate1: bar.events[0]?.date || '',
+      eventYoutubeUrl1: bar.events[0]?.youtube_url || '',
+      eventPhone1: bar.events[0]?.phone || '',
+      eventName2: bar.events[1]?.name || '',
+      eventDate2: bar.events[1]?.date || '',
+      eventYoutubeUrl2: bar.events[1]?.youtube_url || '',
+      eventPhone2: bar.events[1]?.phone || '',
+      eventName3: bar.events[2]?.name || '',
+      eventDate3: bar.events[2]?.date || '',
+      eventYoutubeUrl3: bar.events[2]?.youtube_url || '',
+      eventPhone3: bar.events[2]?.phone || '',
+      eventName4: bar.events[3]?.name || '',
+      eventDate4: bar.events[3]?.date || '',
+      eventYoutubeUrl4: bar.events[3]?.youtube_url || '',
+      eventPhone4: bar.events[3]?.phone || ''
     });
-    setIsEditMode(true);
     setCurrentBarId(bar.id);
-    
-    // Adicionar rolagem suave para o card de edição
-    setTimeout(() => {
-      const editCard = document.getElementById('edit-bar-card');
-      if (editCard) {
-        editCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 100);
+    setIsEditMode(true);
   };
 
   // Cancelar edição
@@ -943,29 +1104,103 @@ const Admin: React.FC = () => {
     if (!currentBarId) return;
     
     try {
-      const { error } = await supabase
+      console.log("Iniciando exclusão do bar ID:", currentBarId);
+      setDeleteDialogOpen(false); // Fechar o diálogo imediatamente
+      
+      toast({
+        title: "Processando exclusão",
+        description: "Excluindo o bar e seus dados relacionados...",
+      });
+      
+      // Primeira etapa: Limpar dependências para evitar problemas de chave estrangeira
+      
+      // 1. Excluir todas as estatísticas do bar
+      await supabase
+        .from('bar_views')
+        .delete()
+        .eq('bar_id', currentBarId)
+        .then(({ error }) => {
+          if (error) console.warn("Aviso ao excluir estatísticas:", error.message);
+        });
+      
+      // 2. Excluir todos os eventos relacionados ao bar
+      await supabase
+        .from('events')
+        .delete()
+        .eq('bar_id', currentBarId)
+        .then(({ error }) => {
+          if (error) console.warn("Aviso ao excluir eventos:", error.message);
+        });
+        
+      // Aguardar um momento para ter certeza que todas as exclusões de dependências foram processadas
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Segunda etapa: Obter dados do bar para limpar imagens
+      const { data: barData } = await supabase
+        .from('bars')
+        .select('*')
+        .eq('id', currentBarId)
+        .single();
+        
+      // Terceira etapa: Excluir o bar
+      const { error: deleteError } = await supabase
         .from('bars')
         .delete()
         .eq('id', currentBarId);
-        
-      if (error) throw error;
       
+      if (deleteError) {
+        console.error("Erro ao excluir bar:", deleteError);
+        
+        // Se falhar, tentar com uma abordagem alternativa usando rpc (function no Supabase)
+        const { error: rpcError } = await supabase.rpc('force_delete_bar', { target_id: currentBarId });
+        
+        if (rpcError) {
+          throw new Error(`Não foi possível excluir o bar: ${deleteError.message}`);
+        }
+      }
+      
+      // Quarta etapa: Limpar recursos (imagens) após a exclusão do bar
+      if (barData) {
+        // Excluir a imagem principal do storage
+        if (barData.image) {
+          await deleteImage(barData.image).catch(err => {
+            console.warn("Aviso ao excluir imagem principal:", err.message);
+          });
+        }
+        
+        // Excluir imagens adicionais do storage
+        if (barData.additional_images && barData.additional_images.length > 0) {
+          for (const imgUrl of barData.additional_images) {
+            if (imgUrl) {
+              await deleteImage(imgUrl).catch(err => {
+                console.warn("Aviso ao excluir imagem adicional:", err.message);
+              });
+            }
+          }
+        }
+      }
+      
+      // Invalidar as consultas para forçar recarregamento dos dados
       queryClient.invalidateQueries({ queryKey: ['bars'] });
       
       toast({
         title: "Bar excluído",
-        description: "O bar foi removido com sucesso."
+        description: "O bar e seus dados relacionados foram removidos com sucesso.",
       });
+      
+      // Forçar atualização da interface
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
       
     } catch (error) {
       console.error("Erro ao excluir bar:", error);
       toast({
-        title: "Erro",
-        description: "Não foi possível excluir o bar. Tente novamente.",
+        title: "Erro na exclusão",
+        description: error instanceof Error ? error.message : "Falha ao excluir o bar. Tente novamente.",
         variant: "destructive"
       });
     } finally {
-      setDeleteDialogOpen(false);
       setCurrentBarId(null);
     }
   };
@@ -974,7 +1209,43 @@ const Admin: React.FC = () => {
   useEffect(() => {
     if (newBar.hours) {
       const parsedHours = parseHoursText(newBar.hours);
-      setHoursData(parsedHours);
+      setHoursData(prev => ({
+        seg: { 
+          open: parsedHours.seg?.open || prev.seg.open, 
+          close: parsedHours.seg?.close || prev.seg.close, 
+          closed: parsedHours.seg?.closed || false 
+        },
+        ter: { 
+          open: parsedHours.ter?.open || prev.ter.open, 
+          close: parsedHours.ter?.close || prev.ter.close, 
+          closed: parsedHours.ter?.closed || false 
+        },
+        qua: { 
+          open: parsedHours.qua?.open || prev.qua.open, 
+          close: parsedHours.qua?.close || prev.qua.close, 
+          closed: parsedHours.qua?.closed || false 
+        },
+        qui: { 
+          open: parsedHours.qui?.open || prev.qui.open, 
+          close: parsedHours.qui?.close || prev.qui.close, 
+          closed: parsedHours.qui?.closed || false 
+        },
+        sex: { 
+          open: parsedHours.sex?.open || prev.sex.open, 
+          close: parsedHours.sex?.close || prev.sex.close, 
+          closed: parsedHours.sex?.closed || false 
+        },
+        sab: { 
+          open: parsedHours.sab?.open || prev.sab.open, 
+          close: parsedHours.sab?.close || prev.sab.close, 
+          closed: parsedHours.sab?.closed || false 
+        },
+        dom: { 
+          open: parsedHours.dom?.open || prev.dom.open, 
+          close: parsedHours.dom?.close || prev.dom.close, 
+          closed: parsedHours.dom?.closed || false 
+        },
+      }));
     }
   }, [newBar.hours]);
 
@@ -998,6 +1269,8 @@ const Admin: React.FC = () => {
 
   // Cancelar edição de evento
   const cancelEditEvent = () => {
+    setEventImageFile(null); // Ensure this line is present
+    setEventImagePreview('');
     setNewEvent({
       id: '',
       title: '',
@@ -1009,14 +1282,30 @@ const Admin: React.FC = () => {
       youtube_url: '',
       bar_id: null
     });
-    setEventImagePreview(null);
-    if (eventFileInputRef.current) eventFileInputRef.current.value = '';
     setIsEditMode(false);
   };
 
   // Excluir evento
   const deleteEvent = async (eventId: string) => {
     try {
+      // Primeiro, obter o evento para conseguir a URL da imagem
+      const { data: eventData, error: fetchError } = await supabase
+        .from('events')
+        .select('image')
+        .eq('id', eventId)
+        .single();
+        
+      if (fetchError) throw fetchError;
+      
+      // Excluir a imagem do storage
+      if (eventData?.image) {
+        await deleteImage(eventData.image).catch(err => {
+          console.error("Erro ao excluir imagem do evento:", err);
+          // Não interromper o processo de exclusão do evento se a imagem falhar
+        });
+      }
+      
+      // Agora excluir o evento
       const { error } = await supabase
         .from('events')
         .delete()
@@ -1042,6 +1331,34 @@ const Admin: React.FC = () => {
 
   // Função para remover uma imagem adicional
   const removeAdditionalImage = (index: number) => {
+    // Se estiver em modo de edição e a imagem adicional existir, excluir do storage
+    if (isEditMode && newBar.additional_images && newBar.additional_images[index]) {
+      // Excluir a imagem do Supabase Storage
+      deleteImage(newBar.additional_images[index])
+        .then(success => {
+          if (success) {
+            toast({
+              title: "Imagem excluída",
+              description: "A imagem foi removida do servidor com sucesso."
+            });
+          } else {
+            toast({
+              title: "Aviso",
+              description: "A imagem foi removida do formulário, mas pode continuar no servidor.",
+              variant: "destructive"
+            });
+          }
+        })
+        .catch(error => {
+          console.error("Erro ao excluir imagem adicional do servidor:", error);
+          toast({
+            title: "Erro",
+            description: "Ocorreu um erro ao tentar excluir a imagem do servidor.",
+            variant: "destructive"
+          });
+        });
+    }
+    
     // Criar uma cópia da lista de imagens adicionais
     const updatedImages = [...newBar.additional_images];
     // Remover a imagem do índice especificado
@@ -1054,7 +1371,7 @@ const Admin: React.FC = () => {
     
     // Limpar o preview
     const newPreviews = [...additionalImagePreviews];
-    newPreviews[index] = null;
+      newPreviews[index] = null;
     setAdditionalImagePreviews(newPreviews);
     
     // Limpar o arquivo
@@ -1082,6 +1399,34 @@ const Admin: React.FC = () => {
 
   // Função para remover a imagem principal
   const removeMainImage = () => {
+    // Se estiver em modo de edição e tiver uma URL de imagem, excluir do storage
+    if (isEditMode && newBar.image) {
+      // Excluir a imagem do Supabase Storage
+      deleteImage(newBar.image)
+        .then(success => {
+          if (success) {
+            toast({
+              title: "Imagem excluída",
+              description: "A imagem foi removida do servidor com sucesso."
+            });
+          } else {
+            toast({
+              title: "Aviso",
+              description: "A imagem foi removida do formulário, mas pode continuar no servidor.",
+              variant: "destructive"
+            });
+          }
+        })
+        .catch(error => {
+          console.error("Erro ao excluir imagem do servidor:", error);
+          toast({
+            title: "Erro",
+            description: "Ocorreu um erro ao tentar excluir a imagem do servidor.",
+            variant: "destructive"
+          });
+        });
+    }
+    
     setNewBar({
       ...newBar,
       image: ''
@@ -1100,6 +1445,57 @@ const Admin: React.FC = () => {
     toast({
       title: "Imagem removida",
       description: "A imagem principal foi removida com sucesso."
+    });
+  };
+
+  // Função para remover a imagem do evento
+  const removeEventImage = () => {
+    // Se estiver editando um evento e houver uma imagem, excluir do storage
+    if (newEvent.id && newEvent.image) {
+      // Excluir a imagem do Supabase Storage
+      deleteImage(newEvent.image)
+        .then(success => {
+          if (success) {
+            toast({
+              title: "Imagem excluída",
+              description: "A imagem do evento foi removida do servidor com sucesso."
+            });
+          } else {
+            toast({
+              title: "Aviso",
+              description: "A imagem foi removida do formulário, mas pode continuar no servidor.",
+              variant: "destructive"
+            });
+          }
+        })
+        .catch(error => {
+          console.error("Erro ao excluir imagem do evento do servidor:", error);
+          toast({
+            title: "Erro",
+            description: "Ocorreu um erro ao tentar excluir a imagem do servidor.",
+            variant: "destructive"
+          });
+        });
+    }
+    
+    setNewEvent({
+      ...newEvent,
+      image: ''
+    });
+    setEventImagePreview(null);
+    setEventImageFile(null);
+    
+    // Limpar o input de arquivo
+    if (eventFileInputRef.current) {
+      eventFileInputRef.current.value = '';
+    }
+    
+    // Remover preview armazenado
+    sessionStorage.removeItem('eventImagePreview');
+    
+    toast({
+      title: "Imagem removida",
+      description: "A imagem do evento foi removida com sucesso."
     });
   };
 
@@ -1355,12 +1751,18 @@ const Admin: React.FC = () => {
       name: '',
       location: '',
       description: '',
-      rating: 4.5, // Avaliação padrão 4.5
+      rating: 0,
       image: '',
       additional_images: [],
-      events: [],
       tags: '',
       maps_url: '',
+      phone: '',
+      instagram: '',
+      facebook: '',
+      hours: '',
+      discount_code: '',
+      discount_description: '',
+      events: [],
       eventName1: '',
       eventDate1: '',
       eventYoutubeUrl1: '',
@@ -1376,11 +1778,7 @@ const Admin: React.FC = () => {
       eventName4: '',
       eventDate4: '',
       eventYoutubeUrl4: '',
-      eventPhone4: '',
-      phone: '',
-      instagram: '',
-      facebook: '',
-      hours: ''
+      eventPhone4: ''
     });
     
     // Limpar previews de imagem
@@ -1431,14 +1829,423 @@ const Admin: React.FC = () => {
     }
   };
 
+  // Funções para gerenciamento de usuários
+  const addUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      if (!newUser.email || !newUser.name) {
+        toast({
+          title: "Campos obrigatórios",
+          description: "Por favor, preencha o email e nome do usuário.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Gerando uma senha temporária
+      const tempPassword = Math.random().toString(36).slice(-8);
+      
+      // Criar usuário na autenticação
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: newUser.email,
+        password: tempPassword,
+        email_confirm: true
+      });
+      
+      if (authError) throw authError;
+      
+      if (authData.user) {
+        // Garantir que não seja possível criar um super_admin
+        const userRole = newUser.role === 'super_admin' ? 'client' : newUser.role || 'user';
+        
+        // Criar perfil do usuário
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert({
+            id: authData.user.id,
+            email: newUser.email,
+            name: newUser.name,
+            phone: newUser.phone || null,
+            role: userRole,
+            approved: newUser.approved || false
+          });
+          
+        if (profileError) throw profileError;
+        
+        toast({
+          title: "Usuário criado",
+          description: `Usuário ${newUser.email} criado com sucesso. Senha temporária: ${tempPassword}`,
+          variant: "default"
+        });
+        
+        // Limpar formulário e fechar diálogo
+        setNewUser({
+          email: '',
+          name: '',
+          phone: '',
+          role: 'user',
+          approved: false
+        });
+        setUserDialogOpen(false);
+        
+        // Recarregar lista de usuários
+        queryClient.invalidateQueries({ queryKey: ['users'] });
+      }
+    } catch (error: any) {
+      console.error('Erro ao criar usuário:', error);
+      toast({
+        title: "Erro ao criar usuário",
+        description: error.message || "Ocorreu um erro ao criar o usuário",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  const updateUserStatus = async (userId: string, approved: boolean) => {
+    try {
+      // Buscar informações do usuário para incluir na mensagem
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('email, name')
+        .eq('id', userId)
+        .single();
+        
+      if (userError) throw userError;
+      
+      // Atualizar o status
+      const { error } = await supabase
+        .from('users')
+        .update({ approved })
+        .eq('id', userId);
+        
+      if (error) throw error;
+      
+      // Mostrar mensagem com nome do usuário
+      toast({
+        title: approved ? "Usuário aprovado" : "Usuário bloqueado",
+        description: approved 
+          ? `O usuário ${userData.name} (${userData.email}) agora tem acesso ao sistema` 
+          : `O acesso do usuário ${userData.name} (${userData.email}) foi bloqueado`,
+        variant: "default"
+      });
+      
+      // Recarregar lista de usuários
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    } catch (error: any) {
+      console.error('Erro ao atualizar status do usuário:', error);
+      toast({
+        title: "Erro ao atualizar usuário",
+        description: error.message || "Ocorreu um erro ao atualizar o status do usuário",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  const updateUserRole = async (userId: string, role: UserRole) => {
+    try {
+      // Garantir que não seja possível promover para super_admin
+      if (role === 'super_admin') {
+        toast({
+          title: "Operação não permitida",
+          description: "Não é possível promover usuários para Super Admin através desta interface.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      const { error } = await supabase
+        .from('users')
+        .update({ role })
+        .eq('id', userId);
+        
+      if (error) throw error;
+      
+      toast({
+        title: "Função atualizada",
+        description: `A função do usuário foi alterada para ${role}`,
+        variant: "default"
+      });
+      
+      // Recarregar lista de usuários
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    } catch (error: any) {
+      console.error('Erro ao atualizar função do usuário:', error);
+      toast({
+        title: "Erro ao atualizar função",
+        description: error.message || "Ocorreu um erro ao atualizar a função do usuário",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  const startDeleteUser = (userId: string) => {
+    setCurrentUserId(userId);
+    setDeleteUserDialogOpen(true);
+  };
+  
+  const confirmDeleteUser = async () => {
+    if (!currentUserId) return;
+    
+    try {
+      // Primeiro, buscar o usuário para obter o email
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', currentUserId)
+        .single();
+        
+      if (userError) throw userError;
+      
+      // Excluir o usuário da tabela users
+      const { error: deleteError } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', currentUserId);
+        
+      if (deleteError) throw deleteError;
+      
+      // Excluir o usuário da autenticação do Supabase
+      const { error: authDeleteError } = await supabase.auth.admin.deleteUser(currentUserId);
+      
+      if (authDeleteError) throw authDeleteError;
+      
+      toast({
+        title: "Usuário excluído",
+        description: `O usuário ${userData.email} foi excluído com sucesso.`,
+        variant: "default"
+      });
+      
+      // Limpar estado e fechar diálogo
+      setCurrentUserId(null);
+      setDeleteUserDialogOpen(false);
+      
+      // Recarregar lista de usuários
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    } catch (error: any) {
+      console.error('Erro ao excluir usuário:', error);
+      toast({
+        title: "Erro ao excluir usuário",
+        description: error.message || "Ocorreu um erro ao excluir o usuário",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  const startResetPassword = (email: string) => {
+    setResetPasswordEmail(email);
+    setResetPasswordDialogOpen(true);
+  };
+  
+  const confirmResetPassword = async () => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetPasswordEmail);
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Email de redefinição enviado",
+        description: `Um email para redefinição de senha foi enviado para ${resetPasswordEmail}`,
+        variant: "default"
+      });
+      
+      // Fechar diálogo
+      setResetPasswordDialogOpen(false);
+      setResetPasswordEmail('');
+    } catch (error: any) {
+      console.error('Erro ao enviar email de redefinição:', error);
+      toast({
+        title: "Erro ao redefinir senha",
+        description: error.message || "Ocorreu um erro ao enviar o email de redefinição",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const startStatusChange = (userId: string, newStatus: boolean) => {
+    setPendingStatusChange({ userId, status: newStatus });
+    setStatusChangeDialogOpen(true);
+  };
+  
+  const confirmStatusChange = async () => {
+    if (!pendingStatusChange) return;
+    
+    await updateUserStatus(pendingStatusChange.userId, pendingStatusChange.status);
+    
+    // Limpar estado e fechar diálogo
+    setPendingStatusChange(null);
+    setStatusChangeDialogOpen(false);
+  };
+
+  // Função para limpar imagens não utilizadas
+  const handleCleanupUnusedImages = async () => {
+    try {
+      setIsUploading(true);
+      
+      // Limpar imagens não utilizadas dos bares
+      const barImagesResult = await cleanupUnusedImages('bar-images');
+      
+      // Limpar imagens não utilizadas dos eventos
+      const eventImagesResult = await cleanupUnusedImages('event-images');
+      
+      if (barImagesResult || eventImagesResult) {
+        toast({
+          title: "Limpeza concluída",
+          description: "As imagens não utilizadas foram removidas com sucesso."
+        });
+      } else {
+        toast({
+          title: "Aviso",
+          description: "Ocorreu um erro durante a limpeza de algumas imagens.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao limpar imagens:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível limpar as imagens não utilizadas.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-black text-white">
       <Navbar />
-      
-      <div className="container mx-auto max-w-7xl px-4 py-8">
+      <div className="container mx-auto px-4 py-8 flex-grow">
         <h1 className="text-3xl font-bold mb-8">Painel de Administração</h1>
         
+        {/* Link para estatísticas de visualização */}
+        <div className="mb-8">
+          <Link to="/bar-stats" className="inline-flex items-center gap-2 text-nightlife-400 hover:text-nightlife-300 transition-colors">
+            <Eye className="h-5 w-5" />
+            <span>Ver Estatísticas de Visualização</span>
+          </Link>
+        </div>
+        
+        {/* Componente para compartilhar link de cadastro (apenas para super_admin) */}
+        {isSuperAdmin && (
+          <div className="mb-8">
+            <ShareRegistrationLink />
+          </div>
+        )}
+        
         <div className="space-y-6">
+          {/* Card de gerenciamento de usuários (apenas super admin) */}
+          {isSuperAdmin && (
+            <Card className="bg-nightlife-900 border-white/10">
+              <CardHeader className="cursor-pointer" onClick={() => setUserManagementExpanded(!userManagementExpanded)}>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <UserIcon className="h-5 w-5" />
+                    Gerenciamento de Usuários Regulares
+                  </CardTitle>
+                  <Button variant="ghost" size="sm">
+                    {userManagementExpanded ? 'Recolher' : 'Expandir'}
+                  </Button>
+                </div>
+                <CardDescription>
+                  Gerencie usuários regulares e proprietários. Administradores não são exibidos nesta lista.
+                </CardDescription>
+              </CardHeader>
+              
+              <Collapsible open={userManagementExpanded} onOpenChange={setUserManagementExpanded}>
+                <CollapsibleContent>
+                  <CardContent>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-medium">Usuários ({users?.length || 0})</h3>
+                      <Button 
+                        size="sm"
+                        onClick={() => setUserDialogOpen(true)}
+                        className="bg-nightlife-600 hover:bg-nightlife-700"
+                      >
+                        <UserPlus className="h-4 w-4 mr-2" />
+                        Novo Usuário
+                      </Button>
+                    </div>
+                    
+                    <div className="overflow-auto max-h-[600px]">
+                      <div className="space-y-2">
+                        {users?.map(user => (
+                          <div key={user.id} className="p-3 bg-nightlife-800/70 rounded-md">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h4 className="font-medium">{user.name}</h4>
+                                <p className="text-sm text-white/70">{user.email}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                    user.role === 'super_admin' 
+                                      ? 'bg-purple-600/30 text-purple-400' 
+                                      : user.role === 'client' 
+                                        ? 'bg-blue-600/30 text-blue-400'
+                                        : 'bg-green-600/30 text-green-400'
+                                  }`}>
+                                    {user.role === 'super_admin' 
+                                      ? 'Super Admin' 
+                                      : user.role === 'client' 
+                                        ? 'Proprietário' 
+                                        : 'Usuário'}
+                                  </span>
+                                  
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                    user.approved
+                                      ? 'bg-emerald-600/30 text-emerald-400'
+                                      : 'bg-rose-600/30 text-rose-400'
+                                  }`}>
+                                    {user.approved ? 'Aprovado' : 'Bloqueado'}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              <div className="flex items-center gap-2">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => startStatusChange(user.id, !user.approved)}
+                                  title={user.approved ? "Bloquear usuário" : "Aprovar usuário"}
+                                >
+                                  {user.approved ? <UserX className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                                </Button>
+                                
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => startResetPassword(user.email)}
+                                  title="Resetar senha"
+                                >
+                                  <Lock className="h-4 w-4" />
+                                </Button>
+                                
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => startDeleteUser(user.id)}
+                                  className="text-red-500 hover:text-red-400"
+                                  title="Excluir usuário"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        
+                        {users?.length === 0 && (
+                          <div className="py-4 text-center text-white/50">
+                            Nenhum usuário encontrado
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Collapsible>
+            </Card>
+          )}
+          
           {/* Card de configuração da página inicial (apenas super admin) */}
           {isSuperAdmin && (
             <Card className="bg-nightlife-900 border-white/10">
@@ -1574,7 +2381,22 @@ const Admin: React.FC = () => {
                       {/* Segunda */}
                       <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                        <label className={`text-sm ${getCurrentDayHour().includes('Segunda') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Segunda-feira</label>
+                        <div className="flex flex-row justify-between sm:justify-start items-center w-full">
+                          <div className="whitespace-nowrap text-sm min-w-[120px]">
+                            <label className={`${getCurrentDayHour().includes('Segunda') ? 'text-blue-400 font-medium' : ''}`}>
+                              Segunda-feira
+                            </label>
+                          </div>
+                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                            <Checkbox 
+                              id="seg-closed"
+                              checked={isBarClosed('seg')}
+                              onCheckedChange={(checked) => handleBarClosedChange('seg', checked === true)}
+                              className="border-white/30 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                            />
+                            <label htmlFor="seg-closed" className="text-xs text-white/70 cursor-pointer">Fechado</label>
+                          </div>
+                        </div>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
@@ -1582,6 +2404,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Segunda') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('seg', 'open', e.target.value)}
                               value={getHoursValue('seg', 'open')}
+                              disabled={isBarClosed('seg')}
                             />
                             <span className="text-white/50">-</span>
                             <Input 
@@ -1590,6 +2413,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Segunda') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('seg', 'close', e.target.value)}
                               value={getHoursValue('seg', 'close')}
+                              disabled={isBarClosed('seg')}
                             />
                           </div>
                         </div>
@@ -1598,7 +2422,22 @@ const Admin: React.FC = () => {
                       {/* Terça */}
                       <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                        <label className={`text-sm ${getCurrentDayHour().includes('Terça') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Terça-feira</label>
+                        <div className="flex flex-row justify-between sm:justify-start items-center w-full">
+                          <div className="whitespace-nowrap text-sm min-w-[120px]">
+                            <label className={`${getCurrentDayHour().includes('Terça') ? 'text-blue-400 font-medium' : ''}`}>
+                              Terça-feira
+                            </label>
+                          </div>
+                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                            <Checkbox 
+                              id="ter-closed"
+                              checked={isBarClosed('ter')}
+                              onCheckedChange={(checked) => handleBarClosedChange('ter', checked === true)}
+                              className="border-white/30 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                            />
+                            <label htmlFor="ter-closed" className="text-xs text-white/70 cursor-pointer">Fechado</label>
+                          </div>
+                        </div>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
@@ -1606,6 +2445,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Terça') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('ter', 'open', e.target.value)}
                               value={getHoursValue('ter', 'open')}
+                              disabled={isBarClosed('ter')}
                             />
                             <span className="text-white/50">-</span>
                             <Input 
@@ -1614,6 +2454,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Terça') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('ter', 'close', e.target.value)}
                               value={getHoursValue('ter', 'close')}
+                              disabled={isBarClosed('ter')}
                             />
                           </div>
                         </div>
@@ -1622,7 +2463,22 @@ const Admin: React.FC = () => {
                       {/* Quarta */}
                       <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                        <label className={`text-sm ${getCurrentDayHour().includes('Quarta') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Quarta-feira</label>
+                        <div className="flex flex-row justify-between sm:justify-start items-center w-full">
+                          <div className="whitespace-nowrap text-sm min-w-[120px]">
+                            <label className={`${getCurrentDayHour().includes('Quarta') ? 'text-blue-400 font-medium' : ''}`}>
+                              Quarta-feira
+                            </label>
+                          </div>
+                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                            <Checkbox 
+                              id="qua-closed"
+                              checked={isBarClosed('qua')}
+                              onCheckedChange={(checked) => handleBarClosedChange('qua', checked === true)}
+                              className="border-white/30 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                            />
+                            <label htmlFor="qua-closed" className="text-xs text-white/70 cursor-pointer">Fechado</label>
+                          </div>
+                        </div>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
@@ -1630,6 +2486,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quarta') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('qua', 'open', e.target.value)}
                               value={getHoursValue('qua', 'open')}
+                              disabled={isBarClosed('qua')}
                             />
                             <span className="text-white/50">-</span>
                             <Input 
@@ -1638,6 +2495,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quarta') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('qua', 'close', e.target.value)}
                               value={getHoursValue('qua', 'close')}
+                              disabled={isBarClosed('qua')}
                             />
                           </div>
                         </div>
@@ -1646,7 +2504,22 @@ const Admin: React.FC = () => {
                       {/* Quinta */}
                       <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                        <label className={`text-sm ${getCurrentDayHour().includes('Quinta') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Quinta-feira</label>
+                        <div className="flex flex-row justify-between sm:justify-start items-center w-full">
+                          <div className="whitespace-nowrap text-sm min-w-[120px]">
+                            <label className={`${getCurrentDayHour().includes('Quinta') ? 'text-blue-400 font-medium' : ''}`}>
+                              Quinta-feira
+                            </label>
+                          </div>
+                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                            <Checkbox 
+                              id="qui-closed"
+                              checked={isBarClosed('qui')}
+                              onCheckedChange={(checked) => handleBarClosedChange('qui', checked === true)}
+                              className="border-white/30 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                            />
+                            <label htmlFor="qui-closed" className="text-xs text-white/70 cursor-pointer">Fechado</label>
+                          </div>
+                        </div>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
@@ -1654,6 +2527,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quinta') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('qui', 'open', e.target.value)}
                               value={getHoursValue('qui', 'open')}
+                              disabled={isBarClosed('qui')}
                             />
                             <span className="text-white/50">-</span>
                             <Input 
@@ -1662,6 +2536,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Quinta') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('qui', 'close', e.target.value)}
                               value={getHoursValue('qui', 'close')}
+                              disabled={isBarClosed('qui')}
                             />
                           </div>
                         </div>
@@ -1670,7 +2545,22 @@ const Admin: React.FC = () => {
                       {/* Sexta */}
                       <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                        <label className={`text-sm ${getCurrentDayHour().includes('Sexta') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Sexta-feira</label>
+                        <div className="flex flex-row justify-between sm:justify-start items-center w-full">
+                          <div className="whitespace-nowrap text-sm min-w-[120px]">
+                            <label className={`${getCurrentDayHour().includes('Sexta') ? 'text-blue-400 font-medium' : ''}`}>
+                              Sexta-feira
+                            </label>
+                          </div>
+                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                            <Checkbox 
+                              id="sex-closed"
+                              checked={isBarClosed('sex')}
+                              onCheckedChange={(checked) => handleBarClosedChange('sex', checked === true)}
+                              className="border-white/30 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                            />
+                            <label htmlFor="sex-closed" className="text-xs text-white/70 cursor-pointer">Fechado</label>
+                          </div>
+                        </div>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
@@ -1678,6 +2568,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Sexta') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('sex', 'open', e.target.value)}
                               value={getHoursValue('sex', 'open')}
+                              disabled={isBarClosed('sex')}
                             />
                             <span className="text-white/50">-</span>
                             <Input 
@@ -1686,6 +2577,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Sexta') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('sex', 'close', e.target.value)}
                               value={getHoursValue('sex', 'close')}
+                              disabled={isBarClosed('sex')}
                             />
                           </div>
                         </div>
@@ -1694,7 +2586,22 @@ const Admin: React.FC = () => {
                       {/* Sábado */}
                       <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                        <label className={`text-sm ${getCurrentDayHour().includes('Sábado') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Sábado</label>
+                        <div className="flex flex-row justify-between sm:justify-start items-center w-full">
+                          <div className="whitespace-nowrap text-sm min-w-[120px]">
+                            <label className={`${getCurrentDayHour().includes('Sábado') ? 'text-blue-400 font-medium' : ''}`}>
+                              Sábado
+                            </label>
+                          </div>
+                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                            <Checkbox 
+                              id="sab-closed"
+                              checked={isBarClosed('sab')}
+                              onCheckedChange={(checked) => handleBarClosedChange('sab', checked === true)}
+                              className="border-white/30 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                            />
+                            <label htmlFor="sab-closed" className="text-xs text-white/70 cursor-pointer">Fechado</label>
+                          </div>
+                        </div>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
@@ -1702,6 +2609,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Sábado') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('sab', 'open', e.target.value)}
                               value={getHoursValue('sab', 'open')}
+                              disabled={isBarClosed('sab')}
                             />
                             <span className="text-white/50">-</span>
                             <Input 
@@ -1710,6 +2618,7 @@ const Admin: React.FC = () => {
                               className={`w-28 bg-nightlife-950 border-white/20 ${getCurrentDayHour().includes('Sábado') ? 'border-blue-500/50' : ''}`}
                               onChange={(e) => handleHoursChange('sab', 'close', e.target.value)}
                               value={getHoursValue('sab', 'close')}
+                              disabled={isBarClosed('sab')}
                             />
                           </div>
                         </div>
@@ -1718,7 +2627,22 @@ const Admin: React.FC = () => {
                       {/* Domingo */}
                       <div className="space-y-2">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                        <label className={`text-sm ${getCurrentDayHour().includes('Domingo') ? 'text-blue-400 font-medium' : ''} sm:w-24`}>Domingo</label>
+                        <div className="flex flex-row justify-between sm:justify-start items-center w-full">
+                          <div className="whitespace-nowrap text-sm min-w-[120px]">
+                            <label className={`${getCurrentDayHour().includes('Domingo') ? 'text-blue-400 font-medium' : ''}`}>
+                              Domingo
+                            </label>
+                          </div>
+                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                            <Checkbox 
+                              id="dom-closed"
+                              checked={isBarClosed('dom')}
+                              onCheckedChange={(checked) => handleBarClosedChange('dom', checked === true)}
+                              className="border-white/30 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                            />
+                            <label htmlFor="dom-closed" className="text-xs text-white/70 cursor-pointer">Fechado</label>
+                          </div>
+                        </div>
                         <div className="flex gap-2 items-center mx-auto sm:mx-0">
                             <Input 
                               type="time"
@@ -1891,7 +2815,35 @@ const Admin: React.FC = () => {
                       Máximo de 4 tags que ajudam na busca e filtragem dos bares
                     </p>
                   </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-white/70 mb-1 block">
+                        Código do Cupom <span className="text-white/50 text-xs">(opcional)</span>
+                      </label>
+                      <Input
+                        name="discount_code"
+                        value={newBar.discount_code || ''}
+                        placeholder="Ex: VIBE123"
+                        onChange={handleBarChange}
+                        className="bg-nightlife-950 border-white/20"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-white/70 mb-1 block">
+                        Descrição do Desconto <span className="text-white/50 text-xs">(opcional)</span>
+                      </label>
+                      <Input
+                        name="discount_description"
+                        value={newBar.discount_description || ''}
+                        placeholder="Ex: Chopp 7% desconto"
+                        onChange={handleBarChange}
+                        className="bg-nightlife-950 border-white/20"
+                      />
+                    </div>
                   </div>
+                </div>
                   
                 {/* Eventos */}
                   <div className="border border-white/10 p-4 rounded-md">
@@ -2222,9 +3174,11 @@ const Admin: React.FC = () => {
                           Editar
                         </Button>
                         <Button 
+                          id={`delete-bar-${bar.id}`}
                           variant="destructive" 
                           size="sm"
                           onClick={() => startDeleteBar(bar.id)}
+                          className="bg-red-600 hover:bg-red-700"
                         >
                           Excluir
                         </Button>
@@ -2253,21 +3207,174 @@ const Admin: React.FC = () => {
         </div>
       </div>
       
+      {/* Diálogo de exclusão de bar */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="bg-nightlife-900 border-white/10 text-white">
+        <AlertDialogContent className="bg-nightlife-900 border-white/10">
           <AlertDialogHeader>
             <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
-            <AlertDialogDescription className="text-white/70">
+            <AlertDialogDescription>
               Tem certeza que deseja excluir este bar? Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="bg-transparent border-white/20 hover:bg-white/10 text-white">Cancelar</AlertDialogCancel>
+            <AlertDialogCancel className="bg-nightlife-800 border-white/10 hover:bg-nightlife-700">Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteBar} className="bg-red-600 hover:bg-red-700">Excluir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Diálogo de criação de usuário */}
+      <AlertDialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
+        <AlertDialogContent className="bg-nightlife-900 border-white/10">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Novo Usuário</AlertDialogTitle>
+            <AlertDialogDescription>
+              Preencha os campos abaixo para criar um novo usuário
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          <form onSubmit={addUser} className="space-y-4 py-4">
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-white/70 mb-1 block">Email*</label>
+                <Input
+                  type="email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                  placeholder="email@exemplo.com"
+                  required
+                  className="bg-nightlife-950 border-white/20"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm text-white/70 mb-1 block">Nome*</label>
+                <Input
+                  value={newUser.name}
+                  onChange={(e) => setNewUser({...newUser, name: e.target.value})}
+                  placeholder="Nome completo"
+                  required
+                  className="bg-nightlife-950 border-white/20"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm text-white/70 mb-1 block">Telefone</label>
+                <Input
+                  value={newUser.phone || ''}
+                  onChange={(e) => setNewUser({...newUser, phone: e.target.value})}
+                  placeholder="(11) 9999-9999"
+                  className="bg-nightlife-950 border-white/20"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm text-white/70 mb-1 block">Função</label>
+                <Select
+                  value={newUser.role}
+                  onValueChange={(value) => setNewUser({...newUser, role: value as UserRole})}
+                >
+                  <SelectTrigger className="bg-nightlife-950 border-white/20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-nightlife-950 border-white/20">
+                    <SelectItem value="user">Usuário</SelectItem>
+                    <SelectItem value="client">Proprietário</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-white/70">Usuário aprovado</label>
+                <Switch 
+                  checked={newUser.approved || false} 
+                  onCheckedChange={(checked) => setNewUser({...newUser, approved: checked})}
+                  className={(newUser.approved || false) ? "data-[state=checked]:bg-emerald-600" : "data-[state=unchecked]:bg-rose-600"}
+                />
+              </div>
+            </div>
+          
+            <AlertDialogFooter>
+              <AlertDialogCancel type="button" className="bg-nightlife-800 border-white/10 hover:bg-nightlife-700">
+                Cancelar
+              </AlertDialogCancel>
+              <Button type="submit" className="bg-nightlife-600 hover:bg-nightlife-700">
+                Criar Usuário
+              </Button>
+            </AlertDialogFooter>
+          </form>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Diálogo de exclusão de usuário */}
+      <AlertDialog open={deleteUserDialogOpen} onOpenChange={setDeleteUserDialogOpen}>
+        <AlertDialogContent className="bg-nightlife-900 border-white/10">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-nightlife-800 border-white/10 hover:bg-nightlife-700">Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteUser} className="bg-red-600 hover:bg-red-700">Excluir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Diálogo para redefinição de senha */}
+      <AlertDialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
+        <AlertDialogContent className="bg-nightlife-900 border-white/10">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Redefinir Senha</AlertDialogTitle>
+            <AlertDialogDescription>
+              Enviar email para redefinição de senha para:
+              <div className="mt-2 font-medium">{resetPasswordEmail}</div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-nightlife-800 border-white/10 hover:bg-nightlife-700">Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmResetPassword} className="bg-blue-600 hover:bg-blue-700">Enviar Email</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Diálogo para alteração de status */}
+      <AlertDialog open={statusChangeDialogOpen} onOpenChange={setStatusChangeDialogOpen}>
+        <AlertDialogContent className="bg-nightlife-900 border-white/10">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar alteração de status</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingStatusChange && (
+                <div className="mt-2">
+                  <p>Você está {pendingStatusChange.status ? "aprovando" : "bloqueando"} o acesso do usuário.</p>
+                  <p className="mt-2">
+                    {pendingStatusChange.status 
+                      ? "Ao aprovar, o usuário poderá acessar o sistema com suas credenciais." 
+                      : "Ao bloquear, o usuário não poderá mais fazer login até que seja aprovado novamente."}
+                  </p>
+                  <div className="mt-4 py-2 px-3 bg-nightlife-950 rounded-md border border-white/10">
+                    <p className="text-sm font-semibold">
+                      Status mudará para: 
+                      <span className={pendingStatusChange.status 
+                        ? "ml-2 text-emerald-400" 
+                        : "ml-2 text-rose-400"
+                      }>
+                        {pendingStatusChange.status ? "Aprovado" : "Bloqueado"}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-nightlife-800 border-white/10 hover:bg-nightlife-700">Cancelar</AlertDialogCancel>
             <AlertDialogAction 
-              className="bg-red-600 hover:bg-red-700 text-white" 
-              onClick={confirmDeleteBar}
+              onClick={confirmStatusChange} 
+              className={`${pendingStatusChange?.status ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"}`}
             >
-              Excluir
+              Confirmar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

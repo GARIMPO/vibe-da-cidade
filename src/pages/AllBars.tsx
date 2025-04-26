@@ -287,6 +287,8 @@ const AllBars: React.FC = () => {
                   phone={bar.phone}
                   instagram={bar.instagram}
                   facebook={bar.facebook}
+                  discount_code={bar.discount_code}
+                  discount_description={bar.discount_description}
                   ref={(ref) => {
                     if (ref) {
                       barCardsRef.current[String(bar.id)] = ref;

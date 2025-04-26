@@ -135,78 +135,183 @@ function shuffleArray<T>(array: T[]): T[] {
   return newArray;
 }
 
-// Função para fazer upload de imagem para o Supabase Storage
-export async function uploadImage(file: File, bucket: string = 'bar-images'): Promise<string | null> {
+// Função melhorada para substituir imagens existentes
+export const uploadImage = async (file: File, bucket: string, existingImageUrl?: string): Promise<string> => {
+  if (!file) {
+    throw new Error('Nenhum arquivo fornecido para upload');
+  }
+
   try {
-    console.log(`Iniciando upload para o bucket ${bucket}`, file);
-    console.log(`Tipo de arquivo: ${file.type}, tamanho: ${file.size} bytes`);
-    
-    // Validar tipo de arquivo
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-      console.error(`Tipo de arquivo inválido: ${file.type}. Tipos válidos: ${validTypes.join(', ')}`);
-      throw new Error(`Tipo de arquivo não suportado. Use apenas: ${validTypes.join(', ')}`);
+    // Se existir uma URL de imagem anterior, exclua-a primeiro
+    if (existingImageUrl) {
+      await deleteImage(existingImageUrl);
     }
 
-    // Validar tamanho (máximo 5MB)
-    const maxSize = 5 * 1024 * 1024; // 5MB
-    if (file.size > maxSize) {
-      console.error(`Arquivo muito grande: ${file.size} bytes. Máximo: ${maxSize} bytes`);
-      throw new Error(`Arquivo muito grande. O tamanho máximo é 5MB.`);
-    }
-    
-    // Criar um nome de arquivo único baseado no timestamp e nome original
+    // Gerar um nome único para o arquivo
     const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+    const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
     const filePath = `${fileName}`;
-    
-    console.log(`Nome do arquivo gerado: ${filePath}`);
-    console.log(`Usando URL do Supabase: ${supabaseUrl}`);
-    
-    // Upload para o bucket especificado no Supabase Storage
-    const { data, error } = await supabase.storage
+
+    // Fazer upload do arquivo para o bucket especificado
+    const { error: uploadError, data } = await supabase.storage
       .from(bucket)
-      .upload(filePath, file, {
-        cacheControl: '3600',
-        upsert: false,
-        contentType: file.type
-      });
-    
-    console.log('Resposta do upload:', { data, error });
-    
-    if (error) {
-      console.error('Erro detalhado do Supabase:', error);
-      console.error('Mensagem de erro:', error.message);
-      console.error('Nome do erro:', error.name);
-      console.error('Erro completo:', JSON.stringify(error, null, 2));
-      
-      if (error.message.includes('Permission denied')) {
-        throw new Error('Permissão negada ao fazer upload da imagem. Verifique as permissões do bucket.');
-      } else if (error.message.includes('Access forbidden')) {
-        throw new Error('Acesso proibido. Verifique a configuração de CORS no Supabase.');
-      } else if (error.message.includes('authentication')) {
-        throw new Error('Erro de autenticação. Verifique a chave anônima do Supabase.');
-      }
-      throw error;
+      .upload(filePath, file);
+
+    if (uploadError) {
+      console.error('Erro no upload:', uploadError);
+      throw new Error(`Erro ao fazer upload: ${uploadError.message}`);
     }
-    
-    // Gerar URL pública da imagem
-    const { data: urlData } = supabase.storage
+
+    // Obter a URL pública da imagem
+    const { data: { publicUrl } } = supabase.storage
       .from(bucket)
       .getPublicUrl(filePath);
-    
-    console.log('URL pública gerada:', urlData.publicUrl);
-    
-    return urlData.publicUrl;
+
+    return publicUrl;
   } catch (error) {
-    console.error("Erro ao fazer upload da imagem:", error);
-    
-    if (error instanceof Error) {
-      console.error("Stack trace:", error.stack);
-      throw new Error(`Erro ao fazer upload: ${error.message}`);
-    } else {
-      console.error("Erro não é uma instância de Error:", typeof error);
-      throw new Error('Ocorreu um erro desconhecido ao fazer upload da imagem');
-    }
+    console.error('Erro no upload da imagem:', error);
+    throw error;
   }
-} 
+};
+
+// Função melhorada para excluir imagens
+export const deleteImage = async (imageUrl: string): Promise<boolean> => {
+  if (!imageUrl) return false;
+
+  try {
+    // Extrair o caminho do arquivo da URL
+    // A URL tem o formato: https://xxx.supabase.co/storage/v1/object/public/bucket-name/file-path
+    const urlParts = imageUrl.split('/');
+    const bucketParts = urlParts[urlParts.length - 2]; // Obtém o bucket
+    const fileName = urlParts[urlParts.length - 1]; // Obtém o nome do arquivo
+    
+    // Extrair o nome do bucket da URL
+    let bucket = '';
+    if (imageUrl.includes('bar-images')) {
+      bucket = 'bar-images';
+    } else if (imageUrl.includes('event-images')) {
+      bucket = 'event-images';
+    } else {
+      console.error('Não foi possível determinar o bucket da imagem:', imageUrl);
+      return false;
+    }
+
+    // Excluir o arquivo do Supabase Storage
+    const { error } = await supabase.storage
+      .from(bucket)
+      .remove([fileName]);
+
+    if (error) {
+      console.error('Erro ao excluir imagem:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Erro ao processar exclusão da imagem:', error);
+    return false;
+  }
+};
+
+// Função para limpar imagens não utilizadas
+export const cleanupUnusedImages = async (bucketName: string = 'bar-images'): Promise<boolean> => {
+  try {
+    // 1. Obter lista de todas as imagens no armazenamento
+    const { data: storageFiles, error: storageError } = await supabase.storage
+      .from(bucketName)
+      .list();
+    
+    if (storageError) {
+      console.error('Erro ao listar arquivos do storage:', storageError);
+      return false;
+    }
+    
+    // 2. Obter lista de todas as imagens referenciadas no banco de dados
+    const { data: barsData, error: barsError } = await supabase
+      .from('bars')
+      .select('image, additional_images');
+      
+    if (barsError) {
+      console.error('Erro ao buscar imagens dos bares:', barsError);
+      return false;
+    }
+    
+    // 3. Obter lista de todas as imagens de eventos referenciadas no banco de dados
+    const { data: eventsData, error: eventsError } = await supabase
+      .from('events')
+      .select('image');
+      
+    if (eventsError) {
+      console.error('Erro ao buscar imagens dos eventos:', eventsError);
+      return false;
+    }
+    
+    // 4. Extrair nomes de arquivos de todas as URLs referenciadas
+    const usedFileNames: Set<string> = new Set();
+    
+    // Adicionar imagens principais dos bares
+    barsData.forEach(bar => {
+      if (bar.image) {
+        const fileName = extractFileNameFromUrl(bar.image);
+        if (fileName) usedFileNames.add(fileName);
+      }
+      
+      // Adicionar imagens adicionais dos bares
+      if (Array.isArray(bar.additional_images)) {
+        bar.additional_images.forEach(imgUrl => {
+          if (imgUrl) {
+            const fileName = extractFileNameFromUrl(imgUrl);
+            if (fileName) usedFileNames.add(fileName);
+          }
+        });
+      }
+    });
+    
+    // Adicionar imagens dos eventos
+    eventsData.forEach(event => {
+      if (event.image) {
+        const fileName = extractFileNameFromUrl(event.image);
+        if (fileName) usedFileNames.add(fileName);
+      }
+    });
+    
+    // 5. Identificar arquivos não utilizados
+    const unusedFiles = storageFiles.filter(file => !usedFileNames.has(file.name));
+    
+    console.log(`Encontrados ${unusedFiles.length} arquivos não utilizados em ${bucketName}`);
+    
+    // 6. Excluir arquivos não utilizados
+    if (unusedFiles.length > 0) {
+      for (const file of unusedFiles) {
+        const { error } = await supabase.storage
+          .from(bucketName)
+          .remove([file.name]);
+        
+        if (error) {
+          console.error(`Erro ao excluir arquivo ${file.name}:`, error);
+        } else {
+          console.log(`Arquivo não utilizado removido: ${file.name}`);
+        }
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Erro ao limpar imagens não utilizadas:', error);
+    return false;
+  }
+};
+
+// Função auxiliar para extrair o nome do arquivo de uma URL
+const extractFileNameFromUrl = (url: string): string | null => {
+  if (!url) return null;
+  
+  try {
+    const urlParts = url.split('/');
+    // O nome do arquivo geralmente é o último segmento da URL
+    return urlParts[urlParts.length - 1];
+  } catch (error) {
+    console.error('Erro ao extrair nome do arquivo da URL:', error);
+    return null;
+  }
+}; 

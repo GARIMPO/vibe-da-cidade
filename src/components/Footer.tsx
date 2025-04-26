@@ -51,7 +51,7 @@ const Footer: React.FC = () => {
           <div>
             <h3 className="text-white font-semibold mb-4">Contato</h3>
             <ul className="space-y-2">
-              <li><a href="https://wa.me/5535998135712" target="_blank" rel="noopener noreferrer" className="text-white/60 hover:text-white transition-colors text-sm">Quero anunciar</a></li>
+              <li><Link to="/marketing" className="text-white/60 hover:text-white transition-colors text-sm">Quero anunciar</Link></li>
               <li><a href="/privacidade" className="text-white/60 hover:text-white transition-colors text-sm">Política de Privacidade</a></li>
               <li><a href="/termos" className="text-white/60 hover:text-white transition-colors text-sm">Termos de Uso</a></li>
             </ul>

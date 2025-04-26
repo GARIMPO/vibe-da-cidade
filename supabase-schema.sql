@@ -15,7 +15,9 @@ CREATE TABLE bars (
   phone TEXT,
   instagram TEXT,
   facebook TEXT,
-  hours TEXT
+  hours TEXT,
+  discount_code TEXT DEFAULT NULL,
+  discount_description TEXT DEFAULT NULL
 );
 
 -- Tabela para armazenar os eventos
@@ -101,7 +103,7 @@ ALTER TABLE bars ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 
 -- Dados de exemplo para bares
-INSERT INTO bars (name, location, description, rating, image, tags, events, phone, instagram, facebook, hours) VALUES
+INSERT INTO bars (name, location, description, rating, image, tags, events, phone, instagram, facebook, hours, discount_code, discount_description) VALUES
 (
   'Boteco do Blues',
   'Centro, Rua Augusta, 123',
@@ -118,7 +120,9 @@ INSERT INTO bars (name, location, description, rating, image, tags, events, phon
   'https://www.facebook.com/botecodoblues',
   'Segunda a Quinta: 18:00 - 00:00
 Sexta e Sábado: 18:00 - 02:00
-Domingo: 16:00 - 22:00'
+Domingo: 16:00 - 22:00',
+  'BLUES10',
+  '10% de desconto em todas as cervejas artesanais'
 ),
 (
   'Rooftop Lounge',
@@ -136,7 +140,9 @@ Domingo: 16:00 - 22:00'
   'https://www.facebook.com/rooftoplounge',
   'Terça a Quinta: 17:00 - 00:00
 Sexta e Sábado: 17:00 - 03:00
-Domingo: 16:00 - 22:00'
+Domingo: 16:00 - 22:00',
+  'ROOFTOP20',
+  '20% de desconto em todos os coquetéis'
 );
 
 -- Dados de exemplo para eventos
