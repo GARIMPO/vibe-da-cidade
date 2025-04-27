@@ -540,10 +540,10 @@ const Admin: React.FC = () => {
         [name]: cleanValue
       }));
     } else {
-      setNewBar(prev => ({
-        ...prev,
-        [name]: value
-      }));
+    setNewBar(prev => ({
+      ...prev,
+      [name]: value
+    }));
     }
   };
 
@@ -1233,23 +1233,23 @@ const Admin: React.FC = () => {
       
       // Quarta etapa: Limpar recursos (imagens) após a exclusão do bar
       if (barData) {
-        // Excluir a imagem principal do storage
+      // Excluir a imagem principal do storage
         if (barData.image) {
-          await deleteImage(barData.image).catch(err => {
+        await deleteImage(barData.image).catch(err => {
             console.warn("Aviso ao excluir imagem principal:", err.message);
-          });
-        }
-        
-        // Excluir imagens adicionais do storage
+        });
+      }
+      
+      // Excluir imagens adicionais do storage
         if (barData.additional_images && barData.additional_images.length > 0) {
-          for (const imgUrl of barData.additional_images) {
-            if (imgUrl) {
-              await deleteImage(imgUrl).catch(err => {
+        for (const imgUrl of barData.additional_images) {
+          if (imgUrl) {
+            await deleteImage(imgUrl).catch(err => {
                 console.warn("Aviso ao excluir imagem adicional:", err.message);
-              });
-            }
+            });
           }
         }
+      }
       }
       
       // Invalidar as consultas para forçar recarregamento dos dados

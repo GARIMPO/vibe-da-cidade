@@ -506,7 +506,7 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
                   <button
                     onClick={() => {
                       const url = `${window.location.origin}/?bar=${id}`;
-                      const message = `Procurando um lugar bacana, venha para *${name}*, confira ${url}`;
+                      const message = `Procurando um lugar bacana, venha para *${name}*, confira nesse link ${url}`;
                       
                       // Tentar abrir o WhatsApp Web
                       const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
