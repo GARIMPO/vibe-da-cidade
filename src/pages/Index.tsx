@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import GradientText from '@/components/GradientText';
 import { supabase } from '@/lib/supabase';
 import { useInView } from 'react-intersection-observer';
+import BannerCarousel from '@/components/BannerCarousel';
 
 // Lazy loading do componente de bares que é pesado
 const LazyBarList = lazy(() => import('@/components/BarList'));
@@ -113,14 +114,15 @@ const Index: React.FC = () => {
                   showBorder={false}
                   className="text-4xl md:text-5xl lg:text-6xl font-bold text-center"
                 >
-                  Bem-vindo ao Vibe da Cidade
+                  <span className="md:inline">Bem-vindo ao</span>{" "}
+                  <span className="block md:inline">Vibe da Cidade</span>
                 </GradientText>
               </div>
-              <p className="text-xl md:text-2xl text-center text-white max-w-2xl mt-6">
+              <p className="text-xl md:text-2xl text-center text-white max-w-2xl mt-6 mx-auto">
                 Descubra os melhores Bares e Restaurantes da cidade
               </p>
               
-              <div className="mt-8">
+              <div className="mt-8 flex flex-col items-center">
                 <Link to="/bares">
                   <GradientText
                     colors={["#40ffaa", "#4079ff", "#40ffaa", "#4079ff", "#40ffaa"]}
@@ -131,6 +133,11 @@ const Index: React.FC = () => {
                     BUSCAR AGORA
                   </GradientText>
                 </Link>
+                
+                <div className="mt-4"></div>
+                
+                {/* Componente de Carrossel de Banners Promocionais */}
+                <BannerCarousel />
               </div>
             </FadeInSection>
           </div>

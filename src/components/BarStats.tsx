@@ -1,25 +1,26 @@
-import React, { useEffect, useState, lazy, Suspense, memo } from 'react';
+import React, { useEffect, useState, memo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Eye, ArrowLeft, RefreshCcw } from 'lucide-react';
+import { Eye, ArrowLeft, RefreshCcw, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { toast } from '@/components/ui/use-toast';
-
-// Lazy load do gráfico para reduzir o tamanho inicial do bundle
-const ChartComponent = lazy(() => import('./StatsChart'));
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface BarView {
   id: number;
-  bar_id: number;
+  bar_id: number | string;
   view_count: number;
   last_viewed: string;
   bar_name?: string;
+  bars?: {
+    name: string;
+  } | null;
 }
 
 // Componente de Card de estatísticas memorizado para evitar re-renderizações desnecessárias
-const StatCard = memo(({ stat, onResetViews }: { stat: BarView, onResetViews: (barId: number) => Promise<void> }) => {
+const StatCard = memo(({ stat, onResetViews }: { stat: BarView, onResetViews: (barId: number | string) => Promise<void> }) => {
   const [isResetting, setIsResetting] = useState(false);
 
   const handleResetViews = async () => {
@@ -29,6 +30,15 @@ const StatCard = memo(({ stat, onResetViews }: { stat: BarView, onResetViews: (b
     } finally {
       setIsResetting(false);
     }
+  };
+
+  const handleShare = () => {
+    const url = `${window.location.origin}/?bar=${stat.bar_id}`;
+    const message = `Procurando um lugar bacana na cidade, venha para ${stat.bar_name} confira: ${url}`;
+      
+    // Tentar abrir o WhatsApp Web
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   return (
@@ -68,11 +78,16 @@ const StatCard = memo(({ stat, onResetViews }: { stat: BarView, onResetViews: (b
             </Button>
           </div>
           
-          {/* Gráfico carregado de forma lazy */}
-          <div className="h-40 mt-4">
-            <Suspense fallback={<div className="h-full flex items-center justify-center text-white/50">Carregando gráfico...</div>}>
-              <ChartComponent viewCount={stat.view_count} />
-            </Suspense>
+          <div className="mt-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="w-full border-white/10 hover:bg-nightlife-600/20 flex items-center justify-center gap-2"
+              onClick={handleShare}
+            >
+              <Share2 className="h-4 w-4" />
+              Compartilhar meu bar agora
+            </Button>
           </div>
         </div>
       </CardContent>
@@ -91,11 +106,22 @@ const BarStats: React.FC = () => {
     
     try {
       // Verificar se o usuário é admin
-      const { data: userData } = await supabase
+      const { data: userData, error: userError } = await supabase
         .from('users')
         .select('role')
         .eq('id', user.id)
         .single();
+      
+      if (userError) {
+        console.error('Erro ao verificar papel do usuário:', userError);
+        toast({
+          title: "Erro",
+          description: "Não foi possível verificar suas permissões. Tente novamente mais tarde.",
+          variant: "destructive"
+        });
+        setLoading(false);
+        return;
+      }
       
       const isUserAdmin = userData?.role === 'super_admin';
       setIsAdmin(isUserAdmin);
@@ -113,7 +139,16 @@ const BarStats: React.FC = () => {
           `)
           .order('view_count', { ascending: false });
         
-        if (error) return;
+        if (error) {
+          console.error('Erro ao buscar estatísticas:', error);
+          toast({
+            title: "Erro",
+            description: "Não foi possível carregar estatísticas. Tente novamente mais tarde.",
+            variant: "destructive"
+          });
+          setLoading(false);
+          return;
+        }
         
         // Remover duplicações: manter apenas um card por bar_id (o com maior contagem)
         const uniqueBarIds = new Map();
@@ -132,17 +167,28 @@ const BarStats: React.FC = () => {
         // Formatar os dados para incluir o nome do bar
         const formattedData = uniqueViewData.map(item => ({
           ...item,
-          bar_name: item.bars ? (item.bars as any).name || 'Bar sem nome' : 'Bar sem nome'
+          bar_name: item.bars ? item.bars.name || 'Bar sem nome' : 'Bar sem nome'
         }));
         
         setStats(formattedData);
       } else {
         // Usuário normal vê apenas seu próprio bar
-        const { data: barData } = await supabase
+        const { data: barData, error: barError } = await supabase
           .from('bars')
-          .select('id')
+          .select('id, name')
           .eq('user_id', user.id)
           .single();
+        
+        if (barError) {
+          console.error('Erro ao buscar bar do usuário:', barError);
+          toast({
+            title: "Erro",
+            description: "Não foi possível encontrar seu bar. Tente novamente mais tarde.",
+            variant: "destructive"
+          });
+          setLoading(false);
+          return;
+        }
         
         if (barData) {
           const { data: viewData, error } = await supabase
@@ -151,41 +197,50 @@ const BarStats: React.FC = () => {
               id,
               bar_id,
               view_count,
-              last_viewed,
-              bars:bar_id(name)
+              last_viewed
             `)
             .eq('bar_id', barData.id)
             .single();
           
           if (error && error.code !== 'PGRST116') {
             console.error('Erro ao buscar estatísticas:', error);
+            toast({
+              title: "Erro",
+              description: "Não foi possível carregar estatísticas. Tente novamente mais tarde.",
+              variant: "destructive"
+            });
           }
           
           if (viewData) {
             setStats([{
               ...viewData,
-              bar_name: viewData.bars ? (viewData.bars as any).name || 'Bar sem nome' : 'Bar sem nome'
+              bar_name: barData.name || 'Meu bar'
             }]);
           } else {
-            // Se não houver dados, criar um registro vazio
+            // Se não houver dados, criar um registro vazio para indicar que não há visualizações
             setStats([{
               id: 0,
               bar_id: barData.id,
               view_count: 0,
               last_viewed: new Date().toISOString(),
-              bar_name: 'Bar sem nome'
+              bar_name: barData.name || 'Meu bar'
             }]);
           }
         }
       }
     } catch (error) {
       console.error('Erro ao buscar estatísticas:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar as estatísticas. Tente novamente mais tarde.",
+        variant: "destructive"
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const resetViews = async (barId: number) => {
+  const resetViews = async (barId: number | string) => {
     try {
       // Atualizar as visualizações para zero
       const { error } = await supabase
@@ -197,6 +252,7 @@ const BarStats: React.FC = () => {
         .eq('bar_id', barId);
       
       if (error) {
+        console.error('Erro ao zerar visualizações:', error);
         throw error;
       }
       
@@ -237,11 +293,31 @@ const BarStats: React.FC = () => {
   if (loading) return (
     <div className="min-h-screen flex flex-col bg-black text-white">
       <div className="container mx-auto px-4 py-8 flex-grow">
-        <div className="flex items-center justify-center h-full">
-          <div className="flex flex-col items-center">
-            <div className="w-10 h-10 border-t-2 border-nightlife-400 rounded-full animate-spin mb-4"></div>
-            <p>Carregando estatísticas...</p>
-          </div>
+        <div className="flex items-center mb-6">
+          <Link to="/admin">
+            <Button variant="outline" className="mr-4">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Voltar para Admin
+            </Button>
+          </Link>
+          <h1 className="text-2xl font-bold">Estatísticas do Sistema</h1>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card className="bg-gray-800/50 border-white/10">
+            <CardHeader>
+              <Skeleton className="h-6 w-1/2 bg-gray-700" />
+              <Skeleton className="h-4 w-1/3 bg-gray-700" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <Skeleton className="h-5 w-full bg-gray-700" />
+                <Skeleton className="h-5 w-full bg-gray-700" />
+                <Skeleton className="h-10 w-full bg-gray-700" />
+                <Skeleton className="h-40 w-full bg-gray-700" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
@@ -257,19 +333,19 @@ const BarStats: React.FC = () => {
               Voltar para Admin
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Estatísticas de Visualização</h1>
+          <h1 className="text-2xl font-bold">Estatísticas do Sistema</h1>
         </div>
         
         {stats.length === 0 ? (
           <Card className="bg-gray-800/50 border-white/10">
             <CardContent className="pt-6">
-              <p className="text-center text-white/70">Nenhuma estatística disponível.</p>
+              <p className="text-center text-white/70">Nenhuma estatística disponível. As visualizações serão registradas quando os usuários visualizarem os detalhes do seu bar.</p>
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {stats.map((stat) => (
-              <StatCard key={stat.id} stat={stat} onResetViews={resetViews} />
+              <StatCard key={stat.id || String(stat.bar_id)} stat={stat} onResetViews={resetViews} />
             ))}
           </div>
         )}

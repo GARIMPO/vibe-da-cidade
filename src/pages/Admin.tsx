@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Upload, Image as ImageIcon, X, User as UserIcon, UserPlus, Lock, UserX, Check, Eye } from 'lucide-react';
+import { ArrowLeft, Upload, Image as ImageIcon, X, User as UserIcon, UserPlus, Lock, UserX, Check, Eye, Activity, Image, User } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import Navbar from '@/components/Navbar';
 import CoverImageConfig from '@/components/CoverImageConfig';
@@ -249,25 +249,23 @@ interface HoursData {
 // Função para formatar os valores de horas para o formato esperado pelo isBarOpen
 const formatHoursForSave = (hoursData: HoursData): string => {
   const dayNames: Record<keyof HoursData, string> = {
-    'seg': 'Segunda',
-    'ter': 'Terça',
-    'qua': 'Quarta',
-    'qui': 'Quinta',
-    'sex': 'Sexta',
-    'sab': 'Sábado',
-    'dom': 'Domingo'
+    seg: 'Segunda',
+    ter: 'Terça',
+    qua: 'Quarta',
+    qui: 'Quinta',
+    sex: 'Sexta',
+    sab: 'Sábado',
+    dom: 'Domingo'
   };
   
   const lines = [];
   
   for (const dayKey of Object.keys(dayNames) as Array<keyof HoursData>) {
     const dayData = hoursData[dayKey];
-    if (dayData) {
-      if (dayData.closed) {
-        lines.push(`${dayNames[dayKey]}: FECHADO`);
-      } else if (dayData.open && dayData.close) {
-        lines.push(`${dayNames[dayKey]}: ${dayData.open} - ${dayData.close}`);
-      }
+    if (dayData.closed) {
+      lines.push(`${dayNames[dayKey]}: FECHADO`);
+    } else if (dayData.open && dayData.close) {
+      lines.push(`${dayNames[dayKey]}: ${dayData.open} - ${dayData.close}`);
     }
   }
   
@@ -435,6 +433,30 @@ const Admin: React.FC = () => {
   const [eventImageFile, setEventImageFile] = useState<File | null>(null);
   const [additionalImageFiles, setAdditionalImageFiles] = useState<(File | null)[]>([null, null, null]);
 
+  // Adicionar estado para controlar se a lista de artistas está habilitada
+  const [showArtistContacts, setShowArtistContacts] = useState(false);
+  
+  // Buscar a configuração de exibição de contatos de artistas
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const { data } = await supabase
+          .from('site_settings')
+          .select('value')
+          .eq('key', 'show_artist_contacts')
+          .single();
+          
+        if (data) {
+          setShowArtistContacts(data.value === 'true');
+        }
+      } catch (error) {
+        console.error('Erro ao buscar configurações:', error);
+      }
+    };
+    
+    fetchSettings();
+  }, []);
+
   // Adicionar um efeito para verificar se a página foi recarregada devido ao aviso
   useEffect(() => {
     // Verificar se existe um flag no sessionStorage indicando que a página foi recarregada após aviso
@@ -487,10 +509,42 @@ const Admin: React.FC = () => {
   // Atualizar campos do novo bar
   const handleBarChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setNewBar(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    
+    // Special handling for Instagram field to avoid URL duplication
+    if (name === 'instagram') {
+      // Remove any prefixes like https://www.instagram.com/ or @
+      let cleanValue = value;
+      if (value.includes('instagram.com/')) {
+        // Extract just the username part from the URL
+        const matches = value.match(/instagram\.com\/([^\/\?]+)/);
+        if (matches && matches[1]) {
+          cleanValue = matches[1];
+        }
+      } else if (value.startsWith('https://')) {
+        // Handle other URL formats
+        try {
+          const url = new URL(value);
+          cleanValue = url.pathname.replace(/^\/+/, ''); // Remove leading slashes
+        } catch (e) {
+          // Not a valid URL, keep the value as is
+        }
+      }
+      
+      // Ensure the username starts with @ if it doesn't already (and it's not empty)
+      if (cleanValue && !cleanValue.startsWith('@')) {
+        cleanValue = `@${cleanValue}`;
+      }
+      
+      setNewBar(prev => ({
+        ...prev,
+        [name]: cleanValue
+      }));
+    } else {
+      setNewBar(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
   };
 
   // Atualizar campos do novo evento
@@ -1017,6 +1071,24 @@ const Admin: React.FC = () => {
 
   // Iniciar edição de bar
   const startEditBar = (bar: Bar) => {
+    // Process Instagram URL if present
+    let instagramValue = bar.instagram || '';
+    
+    // If it's a full URL, extract just the username part
+    if (instagramValue.startsWith('http')) {
+      try {
+        const url = new URL(instagramValue);
+        if (url.hostname.includes('instagram.com')) {
+          const pathParts = url.pathname.split('/').filter(Boolean);
+          if (pathParts.length > 0) {
+            instagramValue = '@' + pathParts[0];
+          }
+        }
+      } catch (e) {
+        // Not a valid URL, keep as is
+      }
+    }
+    
     setNewBar({
       id: bar.id,
       name: bar.name,
@@ -1028,7 +1100,7 @@ const Admin: React.FC = () => {
       tags: bar.tags,
       maps_url: bar.maps_url || '',
       phone: bar.phone || '',
-      instagram: bar.instagram || '',
+      instagram: instagramValue,
       facebook: bar.facebook || '',
       hours: bar.hours || '',
       discount_code: bar.discount_code || '',
@@ -2118,12 +2190,57 @@ const Admin: React.FC = () => {
       <div className="container mx-auto px-4 py-8 flex-grow">
         <h1 className="text-3xl font-bold mb-8">Painel de Administração</h1>
         
-        {/* Link para estatísticas de visualização */}
+        {/* Links para ferramentas administrativas */}
         <div className="mb-8">
-          <Link to="/bar-stats" className="inline-flex items-center gap-2 text-nightlife-400 hover:text-nightlife-300 transition-colors">
-            <Eye className="h-5 w-5" />
-            <span>Ver Estatísticas de Visualização</span>
-          </Link>
+          <h2 className="text-xl font-bold text-white mb-4">Dashboard</h2>
+          
+          <div className="grid grid-cols-1 gap-4">
+            {/* Link para estatísticas */}
+            <Link to="/bar-stats">
+              <div className="bg-gray-800/40 rounded-lg p-4 border border-gray-700/30 hover:bg-gray-700/50 transition-colors">
+                <div className="flex items-center gap-3">
+                  <Activity className="text-nightlife-400 h-5 w-5" />
+                  <span className="text-white/90">Ver Estatísticas de Visualização</span>
+                </div>
+              </div>
+            </Link>
+            
+            {/* Link para contatos de artistas (para usuários comuns, quando habilitado) */}
+            {!isSuperAdmin && showArtistContacts && (
+              <Link to="/contatos-artistas">
+                <div className="bg-gray-800/40 rounded-lg p-4 border border-gray-700/30 hover:bg-gray-700/50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <User className="text-nightlife-400 h-5 w-5" />
+                    <span className="text-white/90">Contatos de Artistas</span>
+                  </div>
+                </div>
+              </Link>
+            )}
+            
+            {/* Link para banners promocionais (apenas para super_admin) */}
+            {isSuperAdmin && (
+              <Link to="/banners-promocionais">
+                <div className="bg-gray-800/40 rounded-lg p-4 border border-gray-700/30 hover:bg-gray-700/50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <Image className="text-nightlife-400 h-5 w-5" />
+                    <span className="text-white/90">Gerenciar Banners Promocionais</span>
+                  </div>
+                </div>
+              </Link>
+            )}
+            
+            {/* Link para contatos de artistas (apenas para super_admin) */}
+            {isSuperAdmin && (
+              <Link to="/contatos-artistas">
+                <div className="bg-gray-800/40 rounded-lg p-4 border border-gray-700/30 hover:bg-gray-700/50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <User className="text-nightlife-400 h-5 w-5" />
+                    <span className="text-white/90">Gerenciar Contatos de Artistas</span>
+                  </div>
+                </div>
+              </Link>
+            )}
+          </div>
         </div>
         
         {/* Componente para compartilhar link de cadastro (apenas para super_admin) */}
@@ -2279,7 +2396,7 @@ const Admin: React.FC = () => {
           {/* Card de adição/edição de bar */}
             <Card id="edit-bar-card" className="bg-nightlife-900 border-white/10">
               <CardHeader>
-                <CardTitle>{isEditMode ? 'Editar Bar' : 'Adicionar Novo Bar'}</CardTitle>
+                <CardTitle>{isEditMode ? 'Editar Bar' : 'Adicionar Novo'}</CardTitle>
                 <CardDescription>
                   {isEditMode 
                     ? 'Atualize as informações do bar selecionado.' 
@@ -2300,7 +2417,7 @@ const Admin: React.FC = () => {
               <form id="add-bar-form" onSubmit={addOrUpdateBar} className="space-y-4 max-w-full">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm text-white/70 mb-1 block">Nome do Bar</label>
+                      <label className="text-sm text-white/70 mb-1 block">Nome do Estabelecimento</label>
                       <Input
                         name="name"
                         placeholder="Nome do bar"
@@ -2387,7 +2504,7 @@ const Admin: React.FC = () => {
                               Segunda-feira
                             </label>
                           </div>
-                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                          <div className="flex items-center gap-1 ml-auto sm:ml-16">
                             <Checkbox 
                               id="seg-closed"
                               checked={isBarClosed('seg')}
@@ -2428,7 +2545,7 @@ const Admin: React.FC = () => {
                               Terça-feira
                             </label>
                           </div>
-                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                          <div className="flex items-center gap-1 ml-auto sm:ml-16">
                             <Checkbox 
                               id="ter-closed"
                               checked={isBarClosed('ter')}
@@ -2469,7 +2586,7 @@ const Admin: React.FC = () => {
                               Quarta-feira
                             </label>
                           </div>
-                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                          <div className="flex items-center gap-1 ml-auto sm:ml-16">
                             <Checkbox 
                               id="qua-closed"
                               checked={isBarClosed('qua')}
@@ -2510,7 +2627,7 @@ const Admin: React.FC = () => {
                               Quinta-feira
                             </label>
                           </div>
-                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                          <div className="flex items-center gap-1 ml-auto sm:ml-16">
                             <Checkbox 
                               id="qui-closed"
                               checked={isBarClosed('qui')}
@@ -2551,7 +2668,7 @@ const Admin: React.FC = () => {
                               Sexta-feira
                             </label>
                           </div>
-                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                          <div className="flex items-center gap-1 ml-auto sm:ml-16">
                             <Checkbox 
                               id="sex-closed"
                               checked={isBarClosed('sex')}
@@ -2592,7 +2709,7 @@ const Admin: React.FC = () => {
                               Sábado
                             </label>
                           </div>
-                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                          <div className="flex items-center gap-1 ml-auto sm:ml-16">
                             <Checkbox 
                               id="sab-closed"
                               checked={isBarClosed('sab')}
@@ -2633,7 +2750,7 @@ const Admin: React.FC = () => {
                               Domingo
                             </label>
                           </div>
-                          <div className="flex items-center gap-1 ml-auto sm:ml-8">
+                          <div className="flex items-center gap-1 ml-auto sm:ml-16">
                             <Checkbox 
                               id="dom-closed"
                               checked={isBarClosed('dom')}
@@ -2675,7 +2792,7 @@ const Admin: React.FC = () => {
                     <label className="text-sm text-white/70 mb-1 block">Descrição</label>
                     <Textarea
                       name="description"
-                      placeholder="Descrição do bar"
+                      placeholder="Descrição"
                       value={newBar.description}
                       onChange={handleBarChange}
                       required
@@ -2688,7 +2805,7 @@ const Admin: React.FC = () => {
                   
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm text-white/70 mb-1 block">Imagem Principal</label>
+                      <label className="text-sm text-white/70 mb-1 block">Imagem Principal (recomendável 185x350px)</label>
                       <div className="flex flex-col gap-3">
                         <div>
                           {/* Botão para upload de imagem */}

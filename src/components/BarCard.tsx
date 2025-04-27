@@ -274,7 +274,8 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
           .from('bar_views')
           .insert({ 
             bar_id: id,
-            view_count: 1
+            view_count: 1,
+            last_viewed: new Date().toISOString()
           });
       }
     } catch (error) {
@@ -504,8 +505,12 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
                   <Share2 className="w-4 h-4 text-nightlife-400" />
                   <button
                     onClick={() => {
-                      const url = `${window.location.origin}${window.location.pathname}?bar=${id}`;
-                      navigator.clipboard.writeText(url);
+                      const url = `${window.location.origin}/?bar=${id}`;
+                      const message = `Procurando um lugar bacana, venha para *${name}*, confira ${url}`;
+                      
+                      // Tentar abrir o WhatsApp Web
+                      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+                      window.open(whatsappUrl, '_blank');
                     }}
                     className="text-white/70 hover:text-white transition-colors text-sm"
                   >
@@ -682,7 +687,7 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
                       <div className="flex items-center gap-2 text-white/80">
                         <Instagram className="h-4 w-4" />
                         <a 
-                          href={`https://instagram.com/${instagram.replace('@', '')}`} 
+                          href={instagram.startsWith('http') ? instagram : `https://instagram.com/${instagram.replace('@', '')}`} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="hover:text-nightlife-500 transition-colors"
@@ -708,7 +713,7 @@ const BarCard = forwardRef<{openDetails: () => void}, BarCardProps>(({
                   {instagram && (
                     <div className="absolute top-1/2 right-4 transform -translate-y-1/2">
                       <a 
-                        href={`https://instagram.com/${instagram.replace('@', '')}`} 
+                        href={instagram.startsWith('http') ? instagram : `https://instagram.com/${instagram.replace('@', '')}`} 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="flex flex-col items-center gap-1 hover:text-nightlife-500 transition-colors group"
