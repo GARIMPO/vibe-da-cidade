@@ -7,6 +7,7 @@ import GradientText from '@/components/GradientText';
 import { supabase } from '@/lib/supabase';
 import { useInView } from 'react-intersection-observer';
 import BannerCarousel from '@/components/BannerCarousel';
+import SplashCursor from '@/components/SplashCursor';
 
 // Lazy loading do componente de bares que é pesado
 const LazyBarList = lazy(() => import('@/components/BarList'));
@@ -61,27 +62,50 @@ const CoverImage = memo(({ imageUrl }: { imageUrl: string }) => {
 const Index: React.FC = () => {
   const [coverImage, setCoverImage] = useState<string>(DEFAULT_COVER_IMAGE);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSplashCursorEnabled, setIsSplashCursorEnabled] = useState<boolean>(false);
   const [barListRef, barListInView] = useInView({
     triggerOnce: true,
     threshold: 0.1
   });
   
-  // Buscar a URL da imagem de capa das configurações do site
+  // Adicionar useEffect para logs do estado do SplashCursor
+  useEffect(() => {
+    console.log('Estado do SplashCursor alterado:', isSplashCursorEnabled);
+  }, [isSplashCursorEnabled]);
+  
+  // Buscar a URL da imagem de capa e configurações do site
   useEffect(() => {
     let isMounted = true;
-    const fetchCoverImage = async () => {
+    const fetchSettings = async () => {
       try {
-        const { data, error } = await supabase
+        // Fetch cover image
+        const { data: coverImageData, error: coverImageError } = await supabase
           .from('site_settings')
           .select('value')
           .eq('key', 'cover_image')
           .single();
           
-        if (data?.value && isMounted) {
-          setCoverImage(data.value);
+        if (coverImageData?.value && isMounted) {
+          setCoverImage(coverImageData.value);
+        }
+        
+        // Fetch splash cursor setting
+        const { data: splashCursorData, error: splashCursorError } = await supabase
+          .from('site_settings')
+          .select('value')
+          .eq('key', 'splash_cursor_enabled')
+          .single();
+          
+        if (splashCursorData?.value && isMounted) {
+          console.log('Configuração do SplashCursor:', splashCursorData.value);
+          setIsSplashCursorEnabled(splashCursorData.value === 'true');
+        } else {
+          console.log('Configuração do SplashCursor não encontrada ou vazia');
+          setIsSplashCursorEnabled(false);
         }
       } catch (error) {
-        console.error('Erro ao buscar imagem de capa:', error);
+        console.error('Erro ao buscar configurações:', error);
+        setIsSplashCursorEnabled(false);
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -89,7 +113,7 @@ const Index: React.FC = () => {
       }
     };
     
-    fetchCoverImage();
+    fetchSettings();
     
     return () => {
       isMounted = false;
@@ -98,6 +122,7 @@ const Index: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-black text-white">
+      {isSplashCursorEnabled && <SplashCursor />}
       <Navbar />
       <main className="flex-grow">
         <div className="relative h-[80vh] flex items-center justify-center">

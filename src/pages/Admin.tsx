@@ -13,6 +13,7 @@ import { ArrowLeft, Upload, Image as ImageIcon, X, User as UserIcon, UserPlus, L
 import { useAuth } from '@/hooks/use-auth';
 import Navbar from '@/components/Navbar';
 import CoverImageConfig from '@/components/CoverImageConfig';
+import SplashCursorConfig from '@/components/SplashCursorConfig';
 import MapsLinkConfig from '@/components/MapsLinkConfig';
 import { useQuery } from '@tanstack/react-query';
 import { Switch } from '@/components/ui/switch';
@@ -2369,11 +2370,18 @@ const Admin: React.FC = () => {
               <CardHeader>
                 <CardTitle>Configuração da Página Inicial</CardTitle>
                 <CardDescription>
-                  Altere a imagem de capa exibida na página inicial
+                  Altere a imagem de capa e efeitos especiais exibidos na página inicial
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <CoverImageConfig />
+              <CardContent className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-medium mb-3">Imagem de Capa</h3>
+                  <CoverImageConfig />
+                </div>
+                
+                <div className="border-t border-white/10 pt-5">
+                  <SplashCursorConfig />
+                </div>
               </CardContent>
             </Card>
           )}
