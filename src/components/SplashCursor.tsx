@@ -895,12 +895,32 @@ function SplashCursor({
 
     function clickSplat(pointer) {
       const color = generateColor();
+      // Aumentar a intensidade das cores para um efeito mais visível
       color.r *= 10.0;
       color.g *= 10.0;
       color.b *= 10.0;
-      let dx = 10 * (Math.random() - 0.5);
-      let dy = 30 * (Math.random() - 0.5);
-      splat(pointer.texcoordX, pointer.texcoordY, dx, dy, color);
+      
+      // Criar vários splats em locais próximos ao ponto do clique
+      // para aumentar o efeito visual
+      const baseX = pointer.texcoordX;
+      const baseY = pointer.texcoordY;
+      
+      // Splat principal com força aumentada
+      splat(baseX, baseY, 30 * (Math.random() - 0.5), 30 * (Math.random() - 0.5), color);
+      
+      // Splats adicionais em torno do ponto principal com pequeno atraso
+      // para criar um efeito mais interessante
+      setTimeout(() => {
+        const offsetX = 0.01 * (Math.random() - 0.5);
+        const offsetY = 0.01 * (Math.random() - 0.5);
+        splat(baseX + offsetX, baseY + offsetY, 20 * (Math.random() - 0.5), 20 * (Math.random() - 0.5), color);
+      }, 10);
+      
+      setTimeout(() => {
+        const offsetX = 0.01 * (Math.random() - 0.5);
+        const offsetY = 0.01 * (Math.random() - 0.5);
+        splat(baseX + offsetX, baseY + offsetY, 20 * (Math.random() - 0.5), 20 * (Math.random() - 0.5), color);
+      }, 20);
     }
 
     const handleMouseDown = (e) => {
@@ -942,8 +962,12 @@ function SplashCursor({
       for (let i = 0; i < touches.length; i++) {
         let posX = scaleByPixelRatio(touches[i].clientX - rect.left);
         let posY = scaleByPixelRatio(touches[i].clientY - rect.top);
-        if (posX < 0 || posX > canvas.width || posY < 0 || posY > canvas.height) continue;
+        // Garantir que as coordenadas estejam dentro do canvas mesmo que o toque não seja exato
+        posX = Math.max(0, Math.min(canvas.width, posX));
+        posY = Math.max(0, Math.min(canvas.height, posY));
         updatePointerDownData(pointer, touches[i].identifier, posX, posY);
+        // Adicionar um splat no momento do toque para feedback visual imediato
+        clickSplat(pointer);
       }
     };
 
@@ -969,8 +993,14 @@ function SplashCursor({
       for (let i = 0; i < touches.length; i++) {
         let posX = scaleByPixelRatio(touches[i].clientX - rect.left);
         let posY = scaleByPixelRatio(touches[i].clientY - rect.top);
-        if (posX < 0 || posX > canvas.width || posY < 0 || posY > canvas.height) continue;
+        // Garantir que as coordenadas estejam dentro do canvas mesmo que o toque não seja exato
+        posX = Math.max(0, Math.min(canvas.width, posX));
+        posY = Math.max(0, Math.min(canvas.height, posY));
         updatePointerMoveData(pointer, posX, posY, pointer.color);
+        // Aplicar o splat durante o movimento para melhor resposta visual
+        if (Math.random() < 0.5) {
+          splatPointer(pointer);
+        }
       }
     };
 
@@ -1203,11 +1233,11 @@ function SplashCursor({
     initFramebuffers();
     
     // Adicionar os event listeners ao document em vez de ao canvas
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('mousedown', handleMouseDown, { passive: false });
     document.addEventListener('touchstart', handleTouchStart, { passive: false });
     document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd);
+    document.addEventListener('touchend', handleTouchEnd, { passive: false });
     
     // Iniciar o loop de animação automaticamente
     updateFrame();
@@ -1269,7 +1299,8 @@ function SplashCursor({
           top: 0,
           left: 0,
           background: 'rgba(0, 0, 0, 0.0)',
-          pointerEvents: 'none'
+          touchAction: 'none',
+          pointerEvents: 'auto'
         }}
       />
     </div>
