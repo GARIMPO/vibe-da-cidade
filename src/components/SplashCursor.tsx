@@ -24,6 +24,8 @@ function SplashCursor({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    console.log('SplashCursor: Inicializando componente');
+
     function hashCode(s) {
       if (s.length === 0) return 0;
       let hash = 0;
@@ -1243,59 +1245,37 @@ function SplashCursor({
     // Iniciar o loop de animação automaticamente
     updateFrame();
     
-    // Também disparar uma primeira splatada para iniciar o efeito visual
-    const initialSplat = () => {
-      const pointer = pointers[0];
-      // Definir uma posição central
-      pointer.texcoordX = 0.5;
-      pointer.texcoordY = 0.5;
-      pointer.color = generateColor();
-      // Criar um splat com direção aleatória
-      let dx = 20 * (Math.random() - 0.5);
-      let dy = 20 * (Math.random() - 0.5);
-      splat(pointer.texcoordX, pointer.texcoordY, dx, dy, pointer.color);
-    };
-    
-    // Disparar vários splats iniciais para tornar o efeito mais visível
-    initialSplat();
-    setTimeout(initialSplat, 100);
-    setTimeout(initialSplat, 300);
-    setTimeout(initialSplat, 500);
-    
-    console.log('SplashCursor inicializado com sucesso');
-    
-    const addAutomaticSplats = () => {
-      // Criar splats automáticos a cada poucos segundos para manter o efeito visível
-      // mesmo quando o usuário não está interagindo
-      
-      // Intervalo para criar novos splats
-      const autoSplatInterval = setInterval(() => {
-        // Verificar se o componente ainda está montado
-        if (!canvas) {
-          clearInterval(autoSplatInterval);
-          return;
-        }
-        
-        // Criar splat em posição aleatória
-        const pointer = pointers[0];
-        const randomX = Math.random();
-        const randomY = Math.random();
-        
-        // Usar cor aleatória suave
+    // Disparar um único efeito inicial depois que o componente montar
+    // para mostrar ao usuário que o efeito está ativo
+    setTimeout(() => {
+      if (canvas) {
+        // Criar um splash no centro da tela
         const color = generateColor();
         color.r *= 5.0;
         color.g *= 5.0;
         color.b *= 5.0;
         
-        // Criar splat com velocidade aleatória
-        const dx = 10 * (Math.random() - 0.5);
-        const dy = 10 * (Math.random() - 0.5);
+        // Coordenadas centrais da tela
+        const x = canvas.width / 2;
+        const y = canvas.height / 2;
         
-        splat(randomX, randomY, dx, dy, color);
-      }, 3000); // Intervalo de 3 segundos
-      
-      // Limpar o intervalo quando o componente for desmontado
-      return () => clearInterval(autoSplatInterval);
+        // Normalizar coordenadas
+        const centerX = x / canvas.width;
+        const centerY = 1.0 - (y / canvas.height);
+        
+        // Criar um efeito visual
+        const dx = 5 * (Math.random() - 0.5);
+        const dy = 5 * (Math.random() - 0.5);
+        
+        splat(centerX, centerY, dx, dy, color);
+      }
+    }, 100);
+    
+    console.log('SplashCursor inicializado com sucesso');
+    
+    const addAutomaticSplats = () => {
+      // Função desabilitada para remover as luzes piscando sem interação do usuário
+      return () => {}; // Retornar função vazia de limpeza
     };
     
     // Iniciar splats automáticos
@@ -1303,6 +1283,7 @@ function SplashCursor({
     
     // Clean up event listeners on unmount
     return () => {
+      console.log('SplashCursor: Desmontando componente');
       cleanupAutoSplats();
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mousedown', handleMouseDown);

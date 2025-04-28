@@ -8,11 +8,10 @@ import { supabase } from '@/lib/supabase';
 import { useInView } from 'react-intersection-observer';
 import BannerCarousel from '@/components/BannerCarousel';
 import SplashCursor from '@/components/SplashCursor';
+import SplashCursorControl from '@/components/SplashCursorControl';
 
 // Lazy loading do componente de bares que é pesado
 const LazyBarList = lazy(() => import('@/components/BarList'));
-
-const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1514933651103-005eec06c04b?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=774&q=80';
 
 // Componente com animação fade-in quando entra na viewport
 const FadeInSection = ({ children }: { children: React.ReactNode }) => {
@@ -38,6 +37,11 @@ const FadeInSection = ({ children }: { children: React.ReactNode }) => {
 const CoverImage = memo(({ imageUrl }: { imageUrl: string }) => {
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // Se não tiver URL de imagem, não tenta carregar
+  if (!imageUrl) {
+    return null;
+  }
+
   useEffect(() => {
     const img = new Image();
     img.src = imageUrl;
@@ -60,9 +64,14 @@ const CoverImage = memo(({ imageUrl }: { imageUrl: string }) => {
 });
 
 const Index: React.FC = () => {
-  const [coverImage, setCoverImage] = useState<string>(DEFAULT_COVER_IMAGE);
+  const [coverImage, setCoverImage] = useState<string>('');
+  const [isImageLoading, setIsImageLoading] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSplashCursorEnabled, setIsSplashCursorEnabled] = useState<boolean>(false);
+  const [isAdminEnabled, setIsAdminEnabled] = useState<boolean>(false); // Estado para verificar se o admin habilitou o recurso
+  const [userEnabled, setUserEnabled] = useState<boolean>(true); // Estado para o controle do usuário
+  const [cursorIntensity, setCursorIntensity] = useState<number>(3); // Intensidade inicial média (1-10)
+  
   const [barListRef, barListInView] = useInView({
     triggerOnce: true,
     threshold: 0.1
@@ -70,14 +79,15 @@ const Index: React.FC = () => {
   
   // Adicionar useEffect para logs do estado do SplashCursor
   useEffect(() => {
-    console.log('Estado do SplashCursor alterado:', isSplashCursorEnabled);
-  }, [isSplashCursorEnabled]);
+    console.log('Estado do SplashCursor alterado:', isSplashCursorEnabled && userEnabled);
+  }, [isSplashCursorEnabled, userEnabled]);
   
   // Buscar a URL da imagem de capa e configurações do site
   useEffect(() => {
     let isMounted = true;
     const fetchSettings = async () => {
       try {
+        setIsImageLoading(true);
         // Fetch cover image
         const { data: coverImageData, error: coverImageError } = await supabase
           .from('site_settings')
@@ -87,6 +97,9 @@ const Index: React.FC = () => {
           
         if (coverImageData?.value && isMounted) {
           setCoverImage(coverImageData.value);
+        } else {
+          // Não definir imagem de fallback, simplesmente mantém como string vazia
+          console.log('Nenhuma imagem de capa encontrada');
         }
         
         // Fetch splash cursor setting
@@ -98,17 +111,37 @@ const Index: React.FC = () => {
           
         if (splashCursorData?.value && isMounted) {
           console.log('Configuração do SplashCursor:', splashCursorData.value);
-          setIsSplashCursorEnabled(splashCursorData.value === 'true');
+          const isEnabled = splashCursorData.value === 'true';
+          setIsSplashCursorEnabled(isEnabled);
+          setIsAdminEnabled(isEnabled); // Armazenar a configuração do admin
         } else {
           console.log('Configuração do SplashCursor não encontrada ou vazia');
           setIsSplashCursorEnabled(false);
+          setIsAdminEnabled(false);
+        }
+        
+        // Carregar preferência do usuário do localStorage
+        const savedUserPreference = localStorage.getItem('userSplashCursorEnabled');
+        if (savedUserPreference !== null) {
+          setUserEnabled(savedUserPreference === 'true');
+        }
+        
+        // Carregar intensidade do localStorage
+        const savedIntensity = localStorage.getItem('userSplashCursorIntensity');
+        if (savedIntensity !== null) {
+          setCursorIntensity(parseInt(savedIntensity, 10));
+        } else {
+          // Se não houver valor salvo, começar com intensidade média
+          setCursorIntensity(3);
         }
       } catch (error) {
         console.error('Erro ao buscar configurações:', error);
         setIsSplashCursorEnabled(false);
+        setIsAdminEnabled(false);
       } finally {
         if (isMounted) {
           setIsLoading(false);
+          setIsImageLoading(false);
         }
       }
     };
@@ -119,15 +152,79 @@ const Index: React.FC = () => {
       isMounted = false;
     };
   }, []);
+  
+  // Toggle estado do efeito pelo usuário
+  const handleToggleSplashCursor = () => {
+    const newValue = !userEnabled;
+    setUserEnabled(newValue);
+    
+    // Forçar uma pequena mudança na intensidade para reiniciar o efeito, e depois voltar
+    if (newValue) {
+      // Se está reativando o efeito, forçar uma atualização dos parâmetros
+      // para garantir que o efeito seja recriado
+      setTimeout(() => {
+        const tempIntensity = cursorIntensity + 0.01;
+        setCursorIntensity(tempIntensity);
+        
+        // Após um pequeno delay, voltar ao valor original
+        setTimeout(() => {
+          setCursorIntensity(cursorIntensity);
+        }, 50);
+      }, 10);
+    }
+    
+    // Salvar preferência do usuário no localStorage
+    localStorage.setItem('userSplashCursorEnabled', newValue.toString());
+  };
+  
+  // Alterar intensidade do efeito
+  const handleIntensityChange = (value: number) => {
+    setCursorIntensity(value);
+    // Salvar preferência de intensidade no localStorage
+    localStorage.setItem('userSplashCursorIntensity', value.toString());
+  };
+  
+  // Calcular os parâmetros do SplashCursor baseados na intensidade
+  const getDynamicCursorParams = () => {
+    // Escalar os parâmetros baseados na intensidade (1-10)
+    // Usar curvas não lineares para melhor percepção da intensidade
+    const intensityFactor = Math.pow(cursorIntensity / 5, 1.5); // Exponencial para diferenciar melhor os valores baixos
+    
+    return {
+      SPLAT_RADIUS: 0.15 * intensityFactor + 0.05, // Mínimo de 0.05 mesmo na intensidade mais baixa
+      DENSITY_DISSIPATION: 4.0 / intensityFactor, // Menor valor = efeito mais persistente
+      SPLAT_FORCE: 4000 * intensityFactor,
+      COLOR_UPDATE_SPEED: 8 * intensityFactor,
+      // Desabilitar completamente os splats automáticos
+      DISABLE_AUTO_SPLATS: true
+    };
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-black text-white">
-      {isSplashCursorEnabled && <SplashCursor />}
+      {/* Exibir o SplashCursor apenas se habilitado pelo admin E pelo usuário */}
+      {isAdminEnabled && userEnabled && (
+        <SplashCursor 
+          key={`splash-cursor-${userEnabled}-${cursorIntensity}`} 
+          {...getDynamicCursorParams()} 
+        />
+      )}
+      
+      {/* Mostrar controles apenas se o recurso estiver habilitado pelo admin */}
+      {isAdminEnabled && (
+        <SplashCursorControl 
+          isEnabled={userEnabled} 
+          onToggle={handleToggleSplashCursor}
+          intensity={cursorIntensity}
+          onIntensityChange={handleIntensityChange}
+        />
+      )}
+      
       <Navbar />
       <main className="flex-grow">
         <div className="relative h-[80vh] flex items-center justify-center">
           {/* Imagem de fundo com pré-carregamento */}
-          <CoverImage imageUrl={coverImage} />
+          {!isImageLoading && coverImage && <CoverImage imageUrl={coverImage} />}
           
           {/* Conteúdo */}
           <div className="relative z-10 flex flex-col items-center justify-center space-y-6 px-4 text-center">
