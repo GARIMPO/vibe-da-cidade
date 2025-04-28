@@ -11,14 +11,14 @@ import { toast } from '@/components/ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-
-interface BannerItem {
-  id: number;
-  image_url: string;
-  text: string;
-  link_url: string;
-  active: boolean;
-}
+import { 
+  Banner as BannerItem, 
+  isYoutubeUrl, 
+  isUrlRemovida, 
+  getYoutubeVideoId,
+  buscarTodosBanners,
+  removerUrlDoBancoDeDados
+} from '@/lib/banner-utils';
 
 const PromotionalBanners: React.FC = () => {
   const { user } = useAuth();
@@ -36,18 +36,14 @@ const PromotionalBanners: React.FC = () => {
       
       try {
         console.log('Buscando banners... User:', user);
-        const { data, error } = await supabase
-          .from('promotional_banners')
-          .select('*')
-          .order('id');
-          
-        console.log('Resultado da busca:', { data, error });
         
-        // Mesmo se houver erro, continuamos com banners vazios
-        // Isso é útil caso a tabela ainda não exista no banco
+        // Remover URL específica do banco de dados
+        await removerUrlDoBancoDeDados();
+        
+        // Buscar todos os banners
+        const existingBanners = await buscarTodosBanners();
         
         // Inicializar com dados existentes ou banners vazios
-        const existingBanners = data || [];
         const initialBanners: BannerItem[] = Array(5).fill(null).map((_, index) => {
           const existing = existingBanners.find(b => b.id === index + 1);
           return existing || {
@@ -95,9 +91,23 @@ const PromotionalBanners: React.FC = () => {
     fetchBanners();
   }, [user]);
   
-  // Verificar se uma URL é do YouTube
-  const isYoutubeUrl = (url: string): boolean => {
-    return /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/.test(url);
+  // Remover URL do banner
+  const removerUrl = (index: number) => {
+    // Atualizar estado
+    const newBanners = [...banners];
+    newBanners[index].image_url = '';
+    setBanners(newBanners);
+    
+    // Limpar preview
+    const newPreviews = [...previews];
+    newPreviews[index] = '';
+    setPreviews(newPreviews);
+    
+    toast({
+      title: "URL removida",
+      description: "A URL foi removida com sucesso.",
+      variant: "default"
+    });
   };
   
   // Manipular upload de imagem
@@ -198,6 +208,30 @@ const PromotionalBanners: React.FC = () => {
   // Atualizar campo de texto ou link do banner
   const updateBannerField = (index: number, field: 'text' | 'link_url' | 'active' | 'image_url', value: string | boolean) => {
     const newBanners = [...banners];
+    
+    // Tratamento especial para o campo image_url
+    if (field === 'image_url' && typeof value === 'string') {
+      // Verificar se é a URL a ser removida
+      if (isUrlRemovida(value)) {
+        removerUrl(index);
+        return;
+      }
+      
+      // Atualizar o campo
+      newBanners[index] = { ...newBanners[index], [field]: value };
+      setBanners(newBanners);
+      
+      // Atualizar preview se for URL do YouTube
+      if (isYoutubeUrl(value)) {
+        // Limpar qualquer preview de imagem anterior
+        const newPreviews = [...previews];
+        newPreviews[index] = '';
+        setPreviews(newPreviews);
+      }
+      return;
+    }
+    
+    // Para outros campos, continue com o comportamento normal
     newBanners[index] = { ...newBanners[index], [field]: value };
     setBanners(newBanners);
   };
@@ -208,7 +242,19 @@ const PromotionalBanners: React.FC = () => {
       const banner = banners[index];
       if (!banner.image_url) return;
       
-      // Extrair o nome do arquivo da URL
+      // Verificar se é a URL a ser removida
+      if (isUrlRemovida(banner.image_url)) {
+        removerUrl(index);
+        return;
+      }
+      
+      // Verificar se é uma URL do YouTube
+      if (isYoutubeUrl(banner.image_url)) {
+        removerUrl(index);
+        return;
+      }
+      
+      // Se for uma imagem no Storage, prosseguir com a remoção
       const fileName = banner.image_url.split('/').pop();
       if (!fileName) return;
       
@@ -219,20 +265,8 @@ const PromotionalBanners: React.FC = () => {
         
       if (error) throw error;
       
-      // Atualizar estado
-      const newBanners = [...banners];
-      newBanners[index].image_url = '';
-      setBanners(newBanners);
-      
-      // Limpar preview
-      const newPreviews = [...previews];
-      newPreviews[index] = '';
-      setPreviews(newPreviews);
-      
-      toast({
-        title: "Imagem removida",
-        description: "A imagem foi removida com sucesso."
-      });
+      // Atualizar estado depois de remover do storage
+      removerUrl(index);
     } catch (error) {
       console.error('Erro ao remover imagem:', error);
       toast({
@@ -248,6 +282,20 @@ const PromotionalBanners: React.FC = () => {
     try {
       setSaving(true);
       
+      // Verificar e limpar URLs a serem removidas
+      const bannersToSave = banners.map(banner => {
+        if (banner.image_url && isUrlRemovida(banner.image_url)) {
+          return {
+            ...banner,
+            image_url: '' // Limpar a URL
+          };
+        }
+        return banner;
+      });
+      
+      // Atualizar estado local com URLs limpas
+      setBanners(bannersToSave);
+      
       // Primeiro, verificar se a tabela existe
       try {
         // Tentar executar o SQL para criar a tabela se não existir
@@ -258,7 +306,7 @@ const PromotionalBanners: React.FC = () => {
       }
       
       // Para cada banner, insere ou atualiza no banco
-      for (const banner of banners) {
+      for (const banner of bannersToSave) {
         const { error } = await supabase
           .from('promotional_banners')
           .upsert(banner, { onConflict: 'id' });
@@ -444,9 +492,22 @@ const PromotionalBanners: React.FC = () => {
                           size="sm"
                           className="whitespace-nowrap border-white/10"
                           onClick={() => {
+                            // Verificar se é a URL a ser removida
+                            if (isUrlRemovida(banner.image_url)) {
+                              toast({
+                                title: "URL removida",
+                                description: "A URL específica foi removida automaticamente.",
+                                variant: "default"
+                              });
+                              
+                              // Remover a URL 
+                              removerUrl(index);
+                              return;
+                            }
+                            
                             // Verifica se é uma URL do YouTube
-                            const isYoutubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/.test(banner.image_url);
-                            if (isYoutubeUrl) {
+                            const youtubeId = getYoutubeVideoId(banner.image_url);
+                            if (youtubeId) {
                               toast({
                                 title: "URL do YouTube detectada",
                                 description: "O vídeo será exibido no lugar da imagem",
@@ -522,7 +583,7 @@ const PromotionalBanners: React.FC = () => {
                         Enviar imagem
                       </Button>
                       
-                      {(previews[index] || (banner.image_url && !isYoutubeUrl(banner.image_url))) && (
+                      {(previews[index] || banner.image_url) && (
                         <Button
                           variant="outline"
                           size="sm"

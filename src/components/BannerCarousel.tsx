@@ -1,21 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import { 
   Dialog, 
   DialogContent, 
   DialogTrigger, 
   DialogClose 
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, X, Youtube } from 'lucide-react';
-
-interface Banner {
-  id: number;
-  image_url: string;
-  text: string;
-  link_url: string;
-  active: boolean;
-}
+import { 
+  Banner,
+  getYoutubeVideoId, 
+  buscarBannersAtivos 
+} from '@/lib/banner-utils';
 
 const BannerCarousel: React.FC = () => {
   const [banners, setBanners] = useState<Banner[]>([]);
@@ -40,20 +35,11 @@ const BannerCarousel: React.FC = () => {
 
   // Buscar banners ativos
   useEffect(() => {
-    const fetchBanners = async () => {
+    const carregarBanners = async () => {
       try {
-        const { data, error } = await supabase
-          .from('promotional_banners')
-          .select('*')
-          .eq('active', true)
-          .order('id');
-          
-        if (error) throw error;
-        
-        // Mostrar todos os banners ativos, sem filtrar por conteúdo
-        const validBanners = data || [];
-        
-        setBanners(validBanners);
+        // Usar função utilitária para buscar banners (já remove URLs indesejadas)
+        const bannersAtivos = await buscarBannersAtivos();
+        setBanners(bannersAtivos);
       } catch (error) {
         console.error('Erro ao buscar banners:', error);
       } finally {
@@ -61,7 +47,7 @@ const BannerCarousel: React.FC = () => {
       }
     };
     
-    fetchBanners();
+    carregarBanners();
   }, []);
 
   // Navegar para o próximo banner
@@ -87,41 +73,14 @@ const BannerCarousel: React.FC = () => {
   };
 
   // Verificar se há banners para exibir
-  if (loading || banners.length === 0) {
+  if (loading) {
     return null;
   }
 
-  // Função para verificar se a URL é do YouTube e extrair o ID do vídeo
-  const getYoutubeVideoId = (url: string): string | null => {
-    if (!url) return null;
-    
-    // Verifica se é uma URL do YouTube
-    const youtubeDomains = [
-      'youtube.com', 
-      'www.youtube.com', 
-      'youtu.be', 
-      'www.youtu.be',
-      'm.youtube.com'
-    ];
-    
-    try {
-      const urlObj = new URL(url);
-      if (!youtubeDomains.includes(urlObj.hostname)) {
-        return null;
-      }
-      
-      // Extrai o ID do vídeo
-      if (urlObj.hostname.includes('youtu.be')) {
-        return urlObj.pathname.substring(1);
-      }
-      
-      const params = new URLSearchParams(urlObj.search);
-      return params.get('v');
-    } catch (error) {
-      // Se não for uma URL válida
-      return null;
-    }
-  };
+  // Se não houver banners válidos, não mostrar nada
+  if (banners.length === 0) {
+    return null;
+  }
 
   const currentBanner = banners[currentIndex];
   const youtubeVideoId = currentBanner ? getYoutubeVideoId(currentBanner.image_url) : null;
