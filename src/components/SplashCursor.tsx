@@ -950,11 +950,11 @@ function SplashCursor({
       let color = generateColor();
       updateFrame(); // start animation loop
       updatePointerMoveData(pointer, posX, posY, color);
-      document.body.removeEventListener('mousemove', handleFirstMouseMove);
+      window.removeEventListener('mousemove', handleFirstMouseMove);
     };
 
     const handleTouchStart = (e) => {
-      e.preventDefault();
+      // Não chame e.preventDefault() para permitir comportamentos padrão
       const touches = e.targetTouches;
       let pointer = pointers[0];
       const rect = canvas.getBoundingClientRect();
@@ -981,11 +981,11 @@ function SplashCursor({
         updateFrame(); // start animation loop
         updatePointerDownData(pointer, touches[i].identifier, posX, posY);
       }
-      document.body.removeEventListener('touchstart', handleFirstTouchStart);
+      window.removeEventListener('touchstart', handleFirstTouchStart);
     };
 
     const handleTouchMove = (e) => {
-      e.preventDefault();
+      // Não chame e.preventDefault() para permitir comportamentos padrão como rolagem
       const touches = e.targetTouches;
       let pointer = pointers[0];
       const rect = canvas.getBoundingClientRect();
@@ -997,8 +997,9 @@ function SplashCursor({
         posX = Math.max(0, Math.min(canvas.width, posX));
         posY = Math.max(0, Math.min(canvas.height, posY));
         updatePointerMoveData(pointer, posX, posY, pointer.color);
-        // Aplicar o splat durante o movimento para melhor resposta visual
-        if (Math.random() < 0.5) {
+        // Aplicar o splat durante o movimento para melhor resposta visual, 
+        // mas não em cada frame para não sobrecarregar em dispositivos móveis
+        if (Math.random() < 0.3) {
           splatPointer(pointer);
         }
       }
@@ -1233,11 +1234,11 @@ function SplashCursor({
     initFramebuffers();
     
     // Adicionar os event listeners ao document em vez de ao canvas
-    document.addEventListener('mousemove', handleMouseMove, { passive: false });
-    document.addEventListener('mousedown', handleMouseDown, { passive: false });
-    document.addEventListener('touchstart', handleTouchStart, { passive: false });
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd, { passive: false });
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    window.addEventListener('mousedown', handleMouseDown, { passive: true });
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
     
     // Iniciar o loop de animação automaticamente
     updateFrame();
@@ -1263,13 +1264,51 @@ function SplashCursor({
     
     console.log('SplashCursor inicializado com sucesso');
     
+    const addAutomaticSplats = () => {
+      // Criar splats automáticos a cada poucos segundos para manter o efeito visível
+      // mesmo quando o usuário não está interagindo
+      
+      // Intervalo para criar novos splats
+      const autoSplatInterval = setInterval(() => {
+        // Verificar se o componente ainda está montado
+        if (!canvas) {
+          clearInterval(autoSplatInterval);
+          return;
+        }
+        
+        // Criar splat em posição aleatória
+        const pointer = pointers[0];
+        const randomX = Math.random();
+        const randomY = Math.random();
+        
+        // Usar cor aleatória suave
+        const color = generateColor();
+        color.r *= 5.0;
+        color.g *= 5.0;
+        color.b *= 5.0;
+        
+        // Criar splat com velocidade aleatória
+        const dx = 10 * (Math.random() - 0.5);
+        const dy = 10 * (Math.random() - 0.5);
+        
+        splat(randomX, randomY, dx, dy, color);
+      }, 3000); // Intervalo de 3 segundos
+      
+      // Limpar o intervalo quando o componente for desmontado
+      return () => clearInterval(autoSplatInterval);
+    };
+    
+    // Iniciar splats automáticos
+    const cleanupAutoSplats = addAutomaticSplats();
+    
     // Clean up event listeners on unmount
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('touchstart', handleTouchStart);
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
+      cleanupAutoSplats();
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
     };
   }, [SIM_RESOLUTION, DYE_RESOLUTION, CAPTURE_RESOLUTION, DENSITY_DISSIPATION, 
       VELOCITY_DISSIPATION, PRESSURE, PRESSURE_ITERATIONS, CURL, SPLAT_RADIUS, 
@@ -1299,8 +1338,8 @@ function SplashCursor({
           top: 0,
           left: 0,
           background: 'rgba(0, 0, 0, 0.0)',
-          touchAction: 'none',
-          pointerEvents: 'auto'
+          touchAction: 'auto',
+          pointerEvents: 'none'
         }}
       />
     </div>
