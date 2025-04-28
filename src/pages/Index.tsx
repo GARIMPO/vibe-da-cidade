@@ -14,7 +14,7 @@ import SplashCursorControl from '@/components/SplashCursorControl';
 const LazyBarList = lazy(() => import('@/components/BarList'));
 
 // Componente com animação fade-in quando entra na viewport
-const FadeInSection = ({ children }: { children: React.ReactNode }) => {
+const FadeInSection = memo(({ children }: { children: React.ReactNode }) => {
   const [ref, inView] = useInView({
     triggerOnce: true,
     threshold: 0.1,
@@ -31,7 +31,7 @@ const FadeInSection = ({ children }: { children: React.ReactNode }) => {
       {children}
     </div>
   );
-};
+});
 
 // Componente de imagem de capa com pré-carregamento
 const CoverImage = memo(({ imageUrl }: { imageUrl: string }) => {
@@ -43,14 +43,35 @@ const CoverImage = memo(({ imageUrl }: { imageUrl: string }) => {
   }
 
   useEffect(() => {
+    // Usar uma variável para rastrear se o componente ainda está montado
+    let isMounted = true;
+    
     const img = new Image();
+    
+    // Definir um timeout para evitar esperar indefinidamente
+    const timeoutId = setTimeout(() => {
+      if (isMounted) setIsLoaded(true);
+    }, 3000);
+    
+    img.onload = () => {
+      if (isMounted) {
+        clearTimeout(timeoutId);
+        setIsLoaded(true);
+      }
+    };
+    
     img.src = imageUrl;
-    img.onload = () => setIsLoaded(true);
+    
+    // Limpar efeitos quando o componente for desmontado
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
   }, [imageUrl]);
 
   return (
     <div 
-      className="absolute inset-0 bg-cover bg-center bg-no-repeat z-0 transition-opacity duration-500" 
+      className="absolute inset-0 bg-cover bg-center bg-black bg-no-repeat z-0 transition-opacity duration-500" 
       style={{ 
         backgroundImage: `url(${imageUrl})`,
         backgroundPosition: 'center 30%',
@@ -85,54 +106,58 @@ const Index: React.FC = () => {
   // Buscar a URL da imagem de capa e configurações do site
   useEffect(() => {
     let isMounted = true;
+    
+    // Carregar preferências do usuário do localStorage primeiro,
+    // para evitar esperar pela chamada da API
+    const loadUserPreferences = () => {
+      // Carregar preferência do usuário do localStorage
+      const savedUserPreference = localStorage.getItem('userSplashCursorEnabled');
+      if (savedUserPreference !== null) {
+        setUserEnabled(savedUserPreference === 'true');
+      }
+      
+      // Carregar intensidade do localStorage
+      const savedIntensity = localStorage.getItem('userSplashCursorIntensity');
+      if (savedIntensity !== null) {
+        setCursorIntensity(parseInt(savedIntensity, 10));
+      } else {
+        // Se não houver valor salvo, começar com intensidade média
+        setCursorIntensity(3);
+      }
+    };
+    
+    // Carregar dados do usuário imediatamente
+    loadUserPreferences();
+    
+    // Buscar configurações do servidor em paralelo
     const fetchSettings = async () => {
       try {
         setIsImageLoading(true);
-        // Fetch cover image
-        const { data: coverImageData, error: coverImageError } = await supabase
-          .from('site_settings')
-          .select('value')
-          .eq('key', 'cover_image')
-          .single();
+        
+        // Usar Promise.all para buscar dados em paralelo
+        const [coverImageResponse, splashCursorResponse] = await Promise.all([
+          // Fetch cover image
+          supabase.from('site_settings').select('value').eq('key', 'cover_image').single(),
+          // Fetch splash cursor setting
+          supabase.from('site_settings').select('value').eq('key', 'splash_cursor_enabled').single()
+        ]);
           
-        if (coverImageData?.value && isMounted) {
-          setCoverImage(coverImageData.value);
+        if (coverImageResponse.data?.value && isMounted) {
+          setCoverImage(coverImageResponse.data.value);
         } else {
           // Não definir imagem de fallback, simplesmente mantém como string vazia
           console.log('Nenhuma imagem de capa encontrada');
         }
         
-        // Fetch splash cursor setting
-        const { data: splashCursorData, error: splashCursorError } = await supabase
-          .from('site_settings')
-          .select('value')
-          .eq('key', 'splash_cursor_enabled')
-          .single();
-          
-        if (splashCursorData?.value && isMounted) {
-          console.log('Configuração do SplashCursor:', splashCursorData.value);
-          const isEnabled = splashCursorData.value === 'true';
+        if (splashCursorResponse.data?.value && isMounted) {
+          console.log('Configuração do SplashCursor:', splashCursorResponse.data.value);
+          const isEnabled = splashCursorResponse.data.value === 'true';
           setIsSplashCursorEnabled(isEnabled);
           setIsAdminEnabled(isEnabled); // Armazenar a configuração do admin
         } else {
           console.log('Configuração do SplashCursor não encontrada ou vazia');
           setIsSplashCursorEnabled(false);
           setIsAdminEnabled(false);
-        }
-        
-        // Carregar preferência do usuário do localStorage
-        const savedUserPreference = localStorage.getItem('userSplashCursorEnabled');
-        if (savedUserPreference !== null) {
-          setUserEnabled(savedUserPreference === 'true');
-        }
-        
-        // Carregar intensidade do localStorage
-        const savedIntensity = localStorage.getItem('userSplashCursorIntensity');
-        if (savedIntensity !== null) {
-          setCursorIntensity(parseInt(savedIntensity, 10));
-        } else {
-          // Se não houver valor salvo, começar com intensidade média
-          setCursorIntensity(3);
         }
       } catch (error) {
         console.error('Erro ao buscar configurações:', error);
@@ -265,9 +290,9 @@ const Index: React.FC = () => {
           </div>
         </div>
         
-        {/* Carregar BarList apenas quando estiver próximo da viewport */}
+        {/* Carregar BarList apenas quando estiver próximo da viewport e após carregar a página principal */}
         <div ref={barListRef} className="w-full">
-          {barListInView && (
+          {barListInView && !isLoading && (
             <Suspense fallback={
               <div className="w-full py-20 flex justify-center items-center">
                 <div className="w-12 h-12 border-t-4 border-nightlife-400 rounded-full animate-spin"></div>

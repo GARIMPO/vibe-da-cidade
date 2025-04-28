@@ -37,11 +37,20 @@ const SplashCursorControl: React.FC<SplashCursorControlProps> = ({
 
       {isEnabled && showSettings && (
         <div className="bg-black/70 text-white p-3 rounded-lg shadow-lg transition-all duration-300 mb-2">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs">Intensidade</span>
-            <span className="text-xs font-mono bg-black/50 px-2 py-0.5 rounded">
-              {intensity < 4 ? 'Leve' : intensity < 7 ? 'Médio' : 'Forte'} ({intensity}/10)
-            </span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between w-full">
+              <span className="text-xs">Intensidade</span>
+              <span className="text-xs font-mono bg-black/50 px-2 py-0.5 rounded">
+                {intensity < 4 ? 'Leve' : intensity < 7 ? 'Médio' : 'Forte'} ({intensity}/10)
+              </span>
+            </div>
+            <button 
+              className="ml-3 text-white/70 hover:text-white -mr-1 text-xs"
+              onClick={() => setShowSettings(false)}
+              aria-label="Fechar configurações"
+            >
+              ✕
+            </button>
           </div>
           <input
             type="range"
